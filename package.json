@@ -1,0 +1,12 @@
+{
+  "name": "ap-invoice-parser",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@netlify/functions": "^2.8.2",
+    "openai": "^4.104.0"
+  },
+  "scripts": {
+    "dev": "netlify dev"
+  }
+}

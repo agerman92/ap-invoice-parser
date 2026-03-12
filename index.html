@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AP Invoice Parser Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    .box {
+      border: 1px solid #ccc;
+      padding: 20px;
+      border-radius: 8px;
+    }
+    button {
+      padding: 10px 16px;
+      cursor: pointer;
+    }
+    pre {
+      background: #f6f6f6;
+      padding: 16px;
+      overflow: auto;
+      border-radius: 8px;
+      white-space: pre-wrap;
+    }
+    .muted {
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <h1>AP Invoice Parser Test</h1>
+  <p class="muted">Upload a PDF invoice and return structured JSON.</p>
+
+  <div class="box">
+    <form id="uploadForm">
+      <input type="file" id="pdfFile" name="file" accept="application/pdf" required />
+      <button type="submit">Parse Invoice</button>
+    </form>
+  </div>
+
+  <h2>Result</h2>
+  <pre id="result">No file parsed yet.</pre>
+
+  <script>
+    const form = document.getElementById("uploadForm");
+    const result = document.getElementById("result");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const fileInput = document.getElementById("pdfFile");
+      const file = fileInput.files[0];
+
+      if (!file) {
+        result.textContent = "Please choose a PDF.";
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      result.textContent = "Parsing invoice...";
+
+      try {
+        const response = await fetch("/.netlify/functions/parse-invoice", {
+          method: "POST",
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          result.textContent = JSON.stringify(data, null, 2);
+          return;
+        }
+
+        result.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        result.textContent = JSON.stringify(
+          { error: err.message || "Unknown error" },
+          null,
+          2
+        );
+      }
+    });
+  </script>
+</body>
+</html>
