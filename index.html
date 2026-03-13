@@ -4,24 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AP Invoice Parser Test</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 900px;
-      margin: 40px auto;
-      padding: 0 20px;
-    }
-    .box {
-      border: 1px solid #ccc;
-      padding: 20px;
-      border-radius: 8px;
-    }
-    button {a<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AP Invoice Parser Test</title>
 
   <style>
     body {
@@ -64,12 +46,12 @@
 </head>
 <body>
   <h1>AP Invoice Parser Test</h1>
-  <p class="muted">Upload a PDF invoice to Supabase Storage and create an invoice row.</p>
+  <p class="muted">Upload a PDF invoice to Supabase, create an invoice row, and trigger parsing.</p>
 
   <div class="box">
     <form id="uploadForm">
       <input type="file" id="pdfFile" name="file" accept="application/pdf" required />
-      <button type="submit">Upload Invoice</button>
+      <button type="submit">Upload & Parse Invoice</button>
     </form>
   </div>
 
@@ -125,6 +107,8 @@
           throw uploadError;
         }
 
+        result.textContent = "Creating invoice record...";
+
         const { data: invoiceRow, error: insertError } = await supabase
           .from("ap_invoices")
           .insert({
@@ -139,13 +123,29 @@
           throw insertError;
         }
 
+        result.textContent = "Calling parser function...";
+
+        const { data: functionData, error: functionError } = await supabase.functions.invoke(
+          "parse-invoice",
+          {
+            body: {
+              invoiceId: invoiceRow.id,
+              storagePath: storagePath
+            }
+          }
+        );
+
+        if (functionError) {
+          throw functionError;
+        }
+
         result.textContent = JSON.stringify(
           {
             success: true,
-            message: "File uploaded to Supabase Storage and invoice row created.",
+            message: "Invoice uploaded and parsed successfully.",
             invoiceId: invoiceRow.id,
-            fileName: file.name,
-            storagePath: storagePath
+            storagePath,
+            functionResult: functionData
           },
           null,
           2
@@ -156,113 +156,6 @@
             success: false,
             error: err.message || "Unknown error"
           },
-          null,
-          2
-        );
-      }
-    });
-  </script>
-</body>
-</html>
-      padding: 10px 16px;
-      cursor: pointer;
-    }
-    pre {
-      background: #f6f6f6;
-      padding: 16px;
-      overflow: auto;
-      border-radius: 8px;
-      white-space: pre-wrap;
-    }
-    .muted {
-      color: #666;
-    }
-  </style>
-</head>
-<body>
-  <h1>AP Invoice Parser Test</h1>
-  <p class="muted">Upload a PDF invoice and return structured JSON.</p>
-
-  <div class="box">
-    <form id="uploadForm">
-      <input type="file" id="pdfFile" name="file" accept="application/pdf" required />
-      <button type="submit">Parse Invoice</button>
-    </form>
-  </div>
-
-  <h2>Result</h2>
-  <pre id="result">No file parsed yet.</pre>
-
-  <script>
-    const form = document.getElementById("uploadForm");
-    const result = document.getElementById("result");
-
-    function fileToBase64(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-
-        reader.onload = () => {
-          const dataUrl = String(reader.result || "");
-          const base64 = dataUrl.split(",")[1];
-
-          if (!base64) {
-            reject(new Error("Could not convert file to base64."));
-            return;
-          }
-
-          resolve(base64);
-        };
-
-        reader.onerror = () => {
-          reject(reader.error || new Error("File read failed."));
-        };
-
-        reader.readAsDataURL(file);
-      });
-    }
-
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-
-      const fileInput = document.getElementById("pdfFile");
-      const file = fileInput.files[0];
-
-      if (!file) {
-        result.textContent = "Please choose a PDF.";
-        return;
-      }
-
-      result.textContent = "Parsing invoice...";
-
-      try {
-        const base64 = await fileToBase64(file);
-
-        const response = await fetch("/.netlify/functions/parse-invoice", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            filename: file.name,
-            mimeType: file.type || "application/pdf",
-            fileDataBase64: base64
-          })
-        });
-
-        const rawText = await response.text();
-
-        let data;
-        try {
-          data = JSON.parse(rawText);
-        } catch (parseError) {
-          result.textContent = rawText || "Server did not return JSON.";
-          return;
-        }
-
-        result.textContent = JSON.stringify(data, null, 2);
-      } catch (err) {
-        result.textContent = JSON.stringify(
-          { error: err.message || "Unknown error" },
           null,
           2
         );

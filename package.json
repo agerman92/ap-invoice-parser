@@ -8,5 +8,8 @@
   },
   "scripts": {
     "dev": "netlify dev"
+  },
+  "devDependencies": {
+    "supabase": "^2.78.1"
   }
 }
