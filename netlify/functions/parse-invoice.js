@@ -1,4 +1,5 @@
 const Busboy = require("busboy");
+const pdf = require("pdf-parse");
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1";
@@ -35,6 +36,7 @@ function parseMultipartForm(event) {
 
     const files = [];
     const fields = {};
+    const filePromises = [];
 
     busboy.on("field", (fieldname, value) => {
       fields[fieldname] = value;
@@ -44,26 +46,36 @@ function parseMultipartForm(event) {
       const { filename, mimeType } = info;
       const chunks = [];
 
-      file.on("data", (chunk) => {
-        chunks.push(chunk);
-      });
+      const filePromise = new Promise((resolveFile, rejectFile) => {
+        file.on("data", (chunk) => {
+          chunks.push(chunk);
+        });
 
-      file.on("end", () => {
-        files.push({
-          fieldname,
-          filename: filename || "upload.pdf",
-          mimeType: mimeType || "application/octet-stream",
-          buffer: Buffer.concat(chunks)
+        file.on("end", () => {
+          files.push({
+            fieldname,
+            filename: filename || "upload.pdf",
+            mimeType: mimeType || "application/octet-stream",
+            buffer: Buffer.concat(chunks)
+          });
+          resolveFile();
+        });
+
+        file.on("error", (err) => {
+          rejectFile(err);
         });
       });
 
-      file.on("error", (err) => {
-        reject(err);
-      });
+      filePromises.push(filePromise);
     });
 
-    busboy.on("finish", () => {
-      resolve({ files, fields });
+    busboy.on("finish", async () => {
+      try {
+        await Promise.all(filePromises);
+        resolve({ files, fields });
+      } catch (err) {
+        reject(err);
+      }
     });
 
     busboy.on("error", (err) => {
@@ -75,7 +87,10 @@ function parseMultipartForm(event) {
 }
 
 function getResponseText(responseJson) {
-  if (typeof responseJson.output_text === "string" && responseJson.output_text.trim()) {
+  if (
+    typeof responseJson.output_text === "string" &&
+    responseJson.output_text.trim()
+  ) {
     return responseJson.output_text;
   }
 
@@ -140,7 +155,17 @@ exports.handler = async (event) => {
       size: pdfFile.buffer.length
     });
 
-    const fileDataBase64 = pdfFile.buffer.toString("base64");
+    const pdfData = await pdf(pdfFile.buffer);
+    const invoiceText = (pdfData.text || "").trim();
+
+    if (!invoiceText) {
+      return jsonResponse(400, {
+        success: false,
+        error: "Could not extract text from PDF."
+      });
+    }
+
+    console.log("Extracted PDF text length:", invoiceText.length);
 
     const schema = {
       type: "object",
@@ -222,7 +247,8 @@ exports.handler = async (event) => {
                 "Return only the fields requested in the JSON schema. " +
                 "Capture freight and drop shipment as separate header charges. " +
                 "Also include them as separate line items in the lines array with line_type values FREIGHT and DROP_SHIPMENT. " +
-                "Use empty strings for missing text values and 0 for missing numeric values."
+                "Use empty strings for missing text values and 0 for missing numeric values. " +
+                "For charge lines like freight or drop shipment, use quantity 1, unit_price equal to the charge amount, net_unit_price equal to the charge amount, and line_total equal to the charge amount."
             }
           ]
         },
@@ -232,14 +258,11 @@ exports.handler = async (event) => {
             {
               type: "input_text",
               text:
-                "Extract this PDF invoice into the required schema. " +
+                "Extract this invoice text into the required schema. " +
                 "Do not omit charges. " +
-                "If a charge line like FREIGHT CHARGE or DROP SHIPMENT appears, include it in lines."
-            },
-            {
-              type: "input_file",
-              filename: pdfFile.filename,
-              file_data: `data:${pdfFile.mimeType};base64,${fileDataBase64}`
+                "If a charge line like FREIGHT CHARGE or DROP SHIPMENT appears, include it in lines.\n\n" +
+                "INVOICE TEXT:\n" +
+                invoiceText
             }
           ]
         }
@@ -313,6 +336,7 @@ exports.handler = async (event) => {
       filename: pdfFile.filename,
       mimeType: pdfFile.mimeType,
       fileSize: pdfFile.buffer.length,
+      extractedTextLength: invoiceText.length,
       extracted: extractedJson
     });
   } catch (error) {
