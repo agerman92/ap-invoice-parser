@@ -4,6 +4,7 @@
   "type": "module",
   "dependencies": {
     "@netlify/functions": "^2.8.2",
+    "busboy": "^1.6.0",
     "openai": "^4.104.0"
   },
   "scripts": {
