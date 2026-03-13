@@ -1,9 +1,6 @@
-const Busboy = require("busboy");
 const pdf = require("pdf-parse");
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-// Use a faster model by default to reduce timeout risk on large invoices.
-// You can override this in Netlify with OPENAI_MODEL.
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
 function jsonResponse(statusCode, payload) {
@@ -14,78 +11,6 @@ function jsonResponse(statusCode, payload) {
     },
     body: JSON.stringify(payload)
   };
-}
-
-function parseMultipartForm(event) {
-  return new Promise((resolve, reject) => {
-    const contentType =
-      event.headers["content-type"] || event.headers["Content-Type"];
-
-    if (!contentType || !contentType.includes("multipart/form-data")) {
-      reject(new Error("Expected multipart/form-data upload."));
-      return;
-    }
-
-    const busboy = Busboy({
-      headers: {
-        "content-type": contentType
-      }
-    });
-
-    const bodyBuffer = event.isBase64Encoded
-      ? Buffer.from(event.body || "", "base64")
-      : Buffer.from(event.body || "", "utf8");
-
-    const files = [];
-    const fields = {};
-    const filePromises = [];
-
-    busboy.on("field", (fieldname, value) => {
-      fields[fieldname] = value;
-    });
-
-    busboy.on("file", (fieldname, file, info) => {
-      const { filename, mimeType } = info;
-      const chunks = [];
-
-      const filePromise = new Promise((resolveFile, rejectFile) => {
-        file.on("data", (chunk) => {
-          chunks.push(chunk);
-        });
-
-        file.on("end", () => {
-          files.push({
-            fieldname,
-            filename: filename || "upload.pdf",
-            mimeType: mimeType || "application/octet-stream",
-            buffer: Buffer.concat(chunks)
-          });
-          resolveFile();
-        });
-
-        file.on("error", (err) => {
-          rejectFile(err);
-        });
-      });
-
-      filePromises.push(filePromise);
-    });
-
-    busboy.on("finish", async () => {
-      try {
-        await Promise.all(filePromises);
-        resolve({ files, fields });
-      } catch (err) {
-        reject(err);
-      }
-    });
-
-    busboy.on("error", (err) => {
-      reject(err);
-    });
-
-    busboy.end(bodyBuffer);
-  });
 }
 
 function getResponseText(responseJson) {
@@ -196,7 +121,7 @@ function buildHeaderText(invoiceText) {
   return `${head}\n\n--- FINAL SECTION ---\n\n${tail}`;
 }
 
-function splitLinesIntoChunks(invoiceText, maxChars = 5000, overlapLines = 4) {
+function splitLinesIntoChunks(invoiceText, maxChars = 4500, overlapLines = 4) {
   const rows = invoiceText
     .split("\n")
     .map((line) => line.trimEnd())
@@ -295,32 +220,32 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { files } = await parseMultipartForm(event);
+    const body = JSON.parse(event.body || "{}");
+    const { filename, mimeType, fileDataBase64 } = body;
 
-    if (!files.length) {
+    if (!fileDataBase64) {
       return jsonResponse(400, {
         success: false,
-        error: "No file was uploaded."
+        error: "Missing fileDataBase64 in request body."
       });
     }
 
-    const pdfFile =
-      files.find((f) => f.mimeType === "application/pdf") || files[0];
+    const pdfBuffer = Buffer.from(fileDataBase64, "base64");
 
-    if (!pdfFile || !pdfFile.buffer || !pdfFile.buffer.length) {
+    if (!pdfBuffer.length) {
       return jsonResponse(400, {
         success: false,
-        error: "Uploaded file was empty."
+        error: "Decoded PDF buffer was empty."
       });
     }
 
-    console.log("Uploaded file:", {
-      filename: pdfFile.filename,
-      mimeType: pdfFile.mimeType,
-      size: pdfFile.buffer.length
+    console.log("Decoded file:", {
+      filename: filename || "upload.pdf",
+      mimeType: mimeType || "application/pdf",
+      size: pdfBuffer.length
     });
 
-    const pdfData = await pdf(pdfFile.buffer);
+    const pdfData = await pdf(pdfBuffer);
     const invoiceText = normalizeInvoiceText(pdfData.text || "");
 
     if (!invoiceText) {
@@ -458,7 +383,6 @@ exports.handler = async (event) => {
 
     const finalLines = dedupeAndSortLines(lineResults);
 
-    // If the model misses header charges, backfill them from extracted lines.
     const freightFromLines = sumChargesByType(finalLines, "FREIGHT");
     const dropShipFromLines = sumChargesByType(finalLines, "DROP_SHIPMENT");
 
@@ -481,9 +405,9 @@ exports.handler = async (event) => {
 
     return jsonResponse(200, {
       success: true,
-      filename: pdfFile.filename,
-      mimeType: pdfFile.mimeType,
-      fileSize: pdfFile.buffer.length,
+      filename: filename || "upload.pdf",
+      mimeType: mimeType || "application/pdf",
+      fileSize: pdfBuffer.length,
       extractedTextLength: invoiceText.length,
       chunkCount: lineChunks.length,
       extracted: finalResult
