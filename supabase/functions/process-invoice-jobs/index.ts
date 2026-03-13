@@ -5,10 +5,6 @@ import { parseInvoiceWithRouter } from "../_shared/parser-router.ts";
 import { validateInvoiceExtraction } from "../_shared/validation.ts";
 import type { InvoiceExtraction } from "../_shared/invoice-schema.ts";
 
-// keep the rest of your existing helper functions from your current worker:
-// normalizeVendorName, normalizeInvoiceNumber, safeDate, claimJob, markJobCompleted,
-// markJobRetry, detectDuplicate, writeInvoiceDraft, etc.
-
 type JobRow = {
   id: number;
   invoice_id: string;
@@ -38,15 +34,69 @@ function safeDate(value: string | null | undefined): string | null {
   return parsed.toISOString().slice(0, 10);
 }
 
-async function claimJob(supabase: ReturnType<typeof createClient>, workerId: string) {
+function normalizeError(error: unknown): {
+  message: string;
+  details?: string;
+  hint?: string;
+  code?: string;
+  stack?: string | null;
+  raw?: unknown;
+} {
+  if (error instanceof Error) {
+    const anyErr = error as Error & {
+      details?: string;
+      hint?: string;
+      code?: string;
+      cause?: unknown;
+    };
+
+    return {
+      message: anyErr.message || "Unknown error",
+      details: anyErr.details,
+      hint: anyErr.hint,
+      code: anyErr.code,
+      stack: anyErr.stack ?? null,
+      raw: anyErr.cause,
+    };
+  }
+
+  if (typeof error === "object" && error !== null) {
+    const obj = error as Record<string, unknown>;
+    return {
+      message:
+        typeof obj.message === "string"
+          ? obj.message
+          : JSON.stringify(obj),
+      details: typeof obj.details === "string" ? obj.details : undefined,
+      hint: typeof obj.hint === "string" ? obj.hint : undefined,
+      code: typeof obj.code === "string" ? obj.code : undefined,
+      stack: typeof obj.stack === "string" ? obj.stack : null,
+      raw: obj,
+    };
+  }
+
+  return {
+    message: String(error),
+    stack: null,
+  };
+}
+
+async function claimJob(
+  supabase: ReturnType<typeof createClient>,
+  workerId: string,
+) {
   const { data, error } = await supabase.rpc("claim_next_ap_invoice_job", {
     p_worker: workerId,
   });
+
   if (error) throw error;
   return data as JobRow | null;
 }
 
-async function markJobCompleted(supabase: ReturnType<typeof createClient>, jobId: number) {
+async function markJobCompleted(
+  supabase: ReturnType<typeof createClient>,
+  jobId: number,
+) {
   const { error } = await supabase
     .from("ap_invoice_jobs")
     .update({
@@ -224,9 +274,11 @@ async function processOneJob(
       .single();
 
     if (invoiceError) throw invoiceError;
-    if (!invoice?.storage_path) throw new Error("Invoice storage_path is missing.");
+    if (!invoice?.storage_path) {
+      throw new Error("Invoice storage_path is missing.");
+    }
 
-    await supabase
+    const { error: invoiceStatusError } = await supabase
       .from("ap_invoices")
       .update({
         status: "extracting",
@@ -234,6 +286,8 @@ async function processOneJob(
         parse_error: null,
       })
       .eq("id", job.invoice_id);
+
+    if (invoiceStatusError) throw invoiceStatusError;
 
     const { data: extraction, error: extractionInsertError } = await supabase
       .from("ap_invoice_extractions")
@@ -279,11 +333,19 @@ async function processOneJob(
     if (extractionUpdateError) throw extractionUpdateError;
 
     await writeInvoiceDraft(supabase, job.invoice_id, parsed, warnings);
-
     await markJobCompleted(supabase, job.id);
+
     return true;
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const normalized = normalizeError(error);
+    const errorMessage = [
+      normalized.message,
+      normalized.code ? `code=${normalized.code}` : null,
+      normalized.details ? `details=${normalized.details}` : null,
+      normalized.hint ? `hint=${normalized.hint}` : null,
+    ]
+      .filter(Boolean)
+      .join(" | ");
 
     if (extractionId) {
       await supabase
@@ -332,14 +394,24 @@ Deno.serve(async (req) => {
       processed += 1;
     }
 
-    return new Response(JSON.stringify({ success: true, processed }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ success: true, processed }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
+    const normalized = normalizeError(error);
+
     return new Response(
       JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: normalized.message,
+        details: normalized.details ?? null,
+        hint: normalized.hint ?? null,
+        code: normalized.code ?? null,
+        stack: normalized.stack ?? null,
+        raw: normalized.raw ?? null,
       }),
       {
         status: 500,
