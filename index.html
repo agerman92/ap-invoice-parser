@@ -46,12 +46,12 @@
 </head>
 <body>
   <h1>AP Invoice Parser Test</h1>
-  <p class="muted">Upload a PDF invoice to Supabase, create an invoice row, and trigger parsing.</p>
+  <p class="muted">Upload a PDF invoice to Supabase, create an invoice row, and queue it for processing.</p>
 
   <div class="box">
     <form id="uploadForm">
       <input type="file" id="pdfFile" name="file" accept="application/pdf" required />
-      <button type="submit">Upload & Parse Invoice</button>
+      <button type="submit">Upload & Queue Invoice</button>
     </form>
   </div>
 
@@ -114,7 +114,8 @@
           .insert({
             file_name: file.name,
             storage_path: storagePath,
-            status: "uploaded"
+            status: "uploaded",
+            review_status: "unreviewed"
           })
           .select()
           .single();
@@ -123,29 +124,35 @@
           throw insertError;
         }
 
-        result.textContent = "Calling parser function...";
+        result.textContent = "Queueing invoice for processing...";
 
-        const { data: functionData, error: functionError } = await supabase.functions.invoke(
-          "parse-invoice",
+        const response = await fetch(
+          `${supabaseUrl}/functions/v1/enqueue-invoice`,
           {
-            body: {
-              invoiceId: invoiceRow.id,
-              storagePath: storagePath
-            }
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${supabaseAnonKey}`
+            },
+            body: JSON.stringify({
+              invoiceId: invoiceRow.id
+            })
           }
         );
 
-        if (functionError) {
-          throw functionError;
+        const queueResult = await response.json();
+
+        if (!response.ok) {
+          throw new Error(queueResult?.error || "Failed to queue invoice.");
         }
 
         result.textContent = JSON.stringify(
           {
             success: true,
-            message: "Invoice uploaded and parsed successfully.",
+            message: "Invoice uploaded and queued for processing.",
             invoiceId: invoiceRow.id,
             storagePath,
-            functionResult: functionData
+            queueResult
           },
           null,
           2
