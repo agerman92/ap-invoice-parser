@@ -1,0 +1,388 @@
+import { createClient } from "jsr:@supabase/supabase-js@2";
+import { corsHeaders } from "../_shared/cors.ts";
+import { extractPdfText } from "../_shared/pdf.ts";
+import { extractStructuredInvoice } from "../_shared/openai.ts";
+import { validateInvoiceExtraction } from "../_shared/validation.ts";
+import type { InvoiceExtraction } from "../_shared/invoice-schema.ts";
+
+type JobRow = {
+  id: number;
+  invoice_id: string;
+  job_type: string;
+  status: string;
+  attempt_count: number;
+  max_attempts: number;
+  payload: Record<string, unknown>;
+};
+
+function normalizeVendorName(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return normalized || null;
+}
+
+function normalizeInvoiceNumber(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const normalized = value.toUpperCase().replace(/[^A-Z0-9]+/g, "");
+  return normalized || null;
+}
+
+function safeDate(value: string | null | undefined): string | null {
+  if (!value?.trim()) return null;
+
+  // Keep simple on write; AP can correct if vendor format is odd.
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  return parsed.toISOString().slice(0, 10);
+}
+
+async function claimJob(supabase: ReturnType<typeof createClient>, workerId: string) {
+  const { data, error } = await supabase.rpc("claim_next_ap_invoice_job", {
+    p_worker: workerId,
+  });
+
+  if (error) throw error;
+  return data as JobRow | null;
+}
+
+async function markJobCompleted(
+  supabase: ReturnType<typeof createClient>,
+  jobId: number,
+) {
+  const { error } = await supabase
+    .from("ap_invoice_jobs")
+    .update({
+      status: "completed",
+      updated_at: new Date().toISOString(),
+      locked_at: null,
+      locked_by: null,
+      last_error: null,
+    })
+    .eq("id", jobId);
+
+  if (error) throw error;
+}
+
+async function markJobRetry(
+  supabase: ReturnType<typeof createClient>,
+  job: JobRow,
+  errorMessage: string,
+) {
+  const nextStatus = job.attempt_count >= job.max_attempts ? "failed" : "retry";
+  const nextRunAfter = new Date(
+    Date.now() + Math.min(job.attempt_count * 30, 300) * 1000,
+  ).toISOString();
+
+  const { error } = await supabase
+    .from("ap_invoice_jobs")
+    .update({
+      status: nextStatus,
+      run_after: nextStatus === "retry" ? nextRunAfter : new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      locked_at: null,
+      locked_by: null,
+      last_error: errorMessage,
+    })
+    .eq("id", job.id);
+
+  if (error) throw error;
+
+  if (nextStatus === "failed") {
+    await supabase
+      .from("ap_invoices")
+      .update({
+        status: "failed",
+        parse_error: errorMessage,
+      })
+      .eq("id", job.invoice_id);
+  }
+}
+
+async function detectDuplicate(
+  supabase: ReturnType<typeof createClient>,
+  invoiceId: string,
+  vendorNormalized: string | null,
+  invoiceNumberNormalized: string | null,
+) {
+  if (!vendorNormalized || !invoiceNumberNormalized) {
+    return { duplicateStatus: "clear", duplicateOfInvoiceId: null };
+  }
+
+  const { data, error } = await supabase
+    .from("ap_invoices")
+    .select("id,total_invoice,invoice_date_parsed")
+    .eq("vendor_normalized", vendorNormalized)
+    .eq("invoice_number_normalized", invoiceNumberNormalized)
+    .neq("id", invoiceId)
+    .limit(1);
+
+  if (error) throw error;
+
+  if (data && data.length > 0) {
+    return {
+      duplicateStatus: "suspected",
+      duplicateOfInvoiceId: data[0].id,
+    };
+  }
+
+  return {
+    duplicateStatus: "clear",
+    duplicateOfInvoiceId: null,
+  };
+}
+
+async function writeInvoiceDraft(
+  supabase: ReturnType<typeof createClient>,
+  invoiceId: string,
+  extractionId: string,
+  parsed: InvoiceExtraction,
+  warnings: unknown[],
+) {
+  const vendorNormalized = normalizeVendorName(parsed.vendor);
+  const invoiceNumberNormalized = normalizeInvoiceNumber(parsed.invoice_number);
+  const invoiceDateParsed = safeDate(parsed.invoice_date);
+
+  const duplicate = await detectDuplicate(
+    supabase,
+    invoiceId,
+    vendorNormalized,
+    invoiceNumberNormalized,
+  );
+
+  const { error: updateInvoiceError } = await supabase
+    .from("ap_invoices")
+    .update({
+      vendor: parsed.vendor || null,
+      vendor_raw_name: parsed.vendor || null,
+      vendor_normalized: vendorNormalized,
+      invoice_number: parsed.invoice_number || null,
+      invoice_number_normalized: invoiceNumberNormalized,
+      invoice_date: parsed.invoice_date || null,
+      invoice_date_parsed: invoiceDateParsed,
+      po_number: parsed.po_number || null,
+      order_number: parsed.order_number || null,
+      shipment_number: parsed.shipment_number || null,
+      terms: parsed.terms || null,
+      currency: parsed.currency || null,
+      subtotal: parsed.subtotal ?? 0,
+      freight_charge: parsed.freight_charge ?? 0,
+      drop_ship_charge: parsed.drop_ship_charge ?? 0,
+      misc_charges: parsed.misc_charges ?? 0,
+      total_invoice: parsed.total_invoice ?? 0,
+      warnings,
+      duplicate_status: duplicate.duplicateStatus,
+      duplicate_of_invoice_id: duplicate.duplicateOfInvoiceId,
+      extraction_version: supabase.rpc ? undefined : undefined,
+      status: "needs_review",
+      review_status: "unreviewed",
+      parse_error: null,
+    })
+    .eq("id", invoiceId);
+
+  if (updateInvoiceError) throw updateInvoiceError;
+
+  const { error: deleteLinesError } = await supabase
+    .from("ap_invoice_lines")
+    .delete()
+    .eq("invoice_id", invoiceId);
+
+  if (deleteLinesError) throw deleteLinesError;
+
+  const lineRows = (parsed.lines || []).map((line) => ({
+    invoice_id: invoiceId,
+    line_number: line.line_number,
+    line_type: line.line_type,
+    part_number: line.part_number || null,
+    description: line.description || null,
+    origin: line.origin || null,
+    quantity: line.quantity ?? 0,
+    unit_price: line.unit_price ?? 0,
+    discount_percent: line.discount_percent ?? 0,
+    net_unit_price: line.net_unit_price ?? 0,
+    line_total: line.line_total ?? 0,
+  }));
+
+  if (lineRows.length > 0) {
+    const { error: insertLinesError } = await supabase
+      .from("ap_invoice_lines")
+      .insert(lineRows);
+
+    if (insertLinesError) throw insertLinesError;
+  }
+
+  const { error: extractionLinkError } = await supabase
+    .from("ap_invoices")
+    .update({
+      extraction_version: 1,
+    })
+    .eq("id", invoiceId);
+
+  if (extractionLinkError) throw extractionLinkError;
+
+  return extractionId;
+}
+
+async function processOneJob(
+  supabase: ReturnType<typeof createClient>,
+  workerId: string,
+): Promise<boolean> {
+  const job = await claimJob(supabase, workerId);
+
+  if (!job) return false;
+
+  let extractionId: string | null = null;
+
+  try {
+    const { data: invoice, error: invoiceError } = await supabase
+      .from("ap_invoices")
+      .select("id, storage_path, file_name")
+      .eq("id", job.invoice_id)
+      .single();
+
+    if (invoiceError) throw invoiceError;
+    if (!invoice?.storage_path) {
+      throw new Error("Invoice storage_path is missing.");
+    }
+
+    await supabase
+      .from("ap_invoices")
+      .update({
+        status: "extracting",
+        review_status: "unreviewed",
+        parse_error: null,
+      })
+      .eq("id", job.invoice_id);
+
+    const { data: extraction, error: extractionInsertError } = await supabase
+      .from("ap_invoice_extractions")
+      .insert({
+        invoice_id: job.invoice_id,
+        storage_path: invoice.storage_path,
+        status: "processing",
+        parser_version: "v1",
+        prompt_version: "v1",
+        schema_version: "v1",
+        model: "gpt-5",
+      })
+      .select("id")
+      .single();
+
+    if (extractionInsertError) throw extractionInsertError;
+    extractionId = extraction.id;
+
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from("ap-invoices")
+      .download(invoice.storage_path);
+
+    if (downloadError) throw downloadError;
+
+    const bytes = new Uint8Array(await fileData.arrayBuffer());
+    const { text: rawText } = await extractPdfText(bytes);
+
+    const parsed = await extractStructuredInvoice(rawText);
+    const warnings = validateInvoiceExtraction(parsed);
+
+    const { error: extractionUpdateError } = await supabase
+      .from("ap_invoice_extractions")
+      .update({
+        status: "completed",
+        raw_text: rawText,
+        structured_json: parsed,
+        warnings,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", extractionId);
+
+    if (extractionUpdateError) throw extractionUpdateError;
+
+    await writeInvoiceDraft(supabase, job.invoice_id, extractionId, parsed, warnings);
+
+    const { error: extractedStatusError } = await supabase
+      .from("ap_invoices")
+      .update({
+        status: "needs_review",
+      })
+      .eq("id", job.invoice_id);
+
+    if (extractedStatusError) throw extractedStatusError;
+
+    await markJobCompleted(supabase, job.id);
+
+    return true;
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : String(error);
+
+    if (extractionId) {
+      await supabase
+        .from("ap_invoice_extractions")
+        .update({
+          status: "failed",
+          error_message: errorMessage,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", extractionId);
+    }
+
+    await supabase
+      .from("ap_invoices")
+      .update({
+        status: "failed",
+        parse_error: errorMessage,
+      })
+      .eq("id", job.invoice_id);
+
+    await markJobRetry(supabase, job, errorMessage);
+    return true;
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  try {
+    const url = new URL(req.url);
+    const batchSize = Math.min(
+      Number(url.searchParams.get("batch") || 1),
+      10,
+    );
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    const workerId = `worker-${crypto.randomUUID()}`;
+    let processed = 0;
+
+    for (let i = 0; i < batchSize; i++) {
+      const didProcess = await processOneJob(supabase, workerId);
+      if (!didProcess) break;
+      processed += 1;
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        processed,
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
+  } catch (error) {
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
+  }
+});

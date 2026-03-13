@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AP Review</title>
+</head>
+<body>
+  <h1>AP Invoice Review</h1>
+
+  <div id="statusMessage">Loading invoices...</div>
+
+  <table border="1" cellpadding="8" cellspacing="0" width="100%">
+    <thead>
+      <tr>
+        <th>Created</th>
+        <th>File Name</th>
+        <th>Vendor</th>
+        <th>Invoice #</th>
+        <th>Invoice Date</th>
+        <th>Total</th>
+        <th>Status</th>
+        <th>Review</th>
+        <th>Duplicate</th>
+        <th>Warnings</th>
+        <th>Open</th>
+      </tr>
+    </thead>
+    <tbody id="invoiceTableBody"></tbody>
+  </table>
+
+  <script type="module" src="../js/ap-review.js"></script>
+</body>
+</html>

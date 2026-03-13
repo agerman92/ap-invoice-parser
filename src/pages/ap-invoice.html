@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invoice Detail</title>
+</head>
+<body>
+  <h1>Invoice Detail</h1>
+
+  <p><a href="./ap-review.html">← Back to AP Review</a></p>
+
+  <div id="statusMessage">Loading invoice...</div>
+
+  <h2>Invoice Header</h2>
+  <div id="invoiceHeader"></div>
+
+  <h2>Warnings</h2>
+  <div id="invoiceWarnings"></div>
+
+  <h2>Invoice Lines</h2>
+  <table border="1" cellpadding="8" cellspacing="0" width="100%">
+    <thead>
+      <tr>
+        <th>Line #</th>
+        <th>Type</th>
+        <th>Part Number</th>
+        <th>Description</th>
+        <th>Origin</th>
+        <th>Qty</th>
+        <th>Unit Price</th>
+        <th>Discount %</th>
+        <th>Net Unit Price</th>
+        <th>Line Total</th>
+      </tr>
+    </thead>
+    <tbody id="lineTableBody"></tbody>
+  </table>
+
+  <script type="module" src="../js/ap-invoice.js"></script>
+</body>
+</html>
