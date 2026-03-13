@@ -7,10 +7,15 @@ const lineTableBody = document.getElementById("lineTableBody");
 const saveButton = document.getElementById("saveButton");
 const approveButton = document.getElementById("approveButton");
 const duplicateButton = document.getElementById("duplicateButton");
+const reloadPdfButton = document.getElementById("reloadPdfButton");
+const pdfFrame = document.getElementById("pdfFrame");
+const pdfFallback = document.getElementById("pdfFallback");
+const openPdfLink = document.getElementById("openPdfLink");
 
 let currentInvoice = null;
 let currentLines = [];
 let currentUser = null;
+let currentPdfUrl = null;
 
 async function initPage() {
   try {
@@ -25,6 +30,7 @@ async function initPage() {
     saveButton.addEventListener("click", saveChanges);
     approveButton.addEventListener("click", approveInvoice);
     duplicateButton.addEventListener("click", markDuplicate);
+    reloadPdfButton.addEventListener("click", reloadPdf);
   } catch (error) {
     console.error(error);
     statusMessage.textContent = `Error initializing page: ${error.message}`;
@@ -72,8 +78,50 @@ async function loadInvoiceDetail() {
   renderInvoiceHeaderForm(invoice);
   renderWarnings(invoice.warnings);
   renderLines(currentLines);
+  await loadPdfPreview(invoice);
 
   statusMessage.textContent = "Invoice loaded.";
+}
+
+async function loadPdfPreview(invoice) {
+  pdfFallback.style.display = "none";
+  pdfFrame.style.display = "block";
+  pdfFrame.removeAttribute("src");
+  openPdfLink.href = "#";
+
+  if (!invoice?.storage_path) {
+    pdfFrame.style.display = "none";
+    pdfFallback.style.display = "block";
+    pdfFallback.textContent = "No storage path found for this invoice PDF.";
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase.storage
+      .from("ap-invoices")
+      .createSignedUrl(invoice.storage_path, 3600);
+
+    if (error) throw error;
+    if (!data?.signedUrl) {
+      throw new Error("No signed PDF URL returned.");
+    }
+
+    currentPdfUrl = data.signedUrl;
+    pdfFrame.src = currentPdfUrl;
+    openPdfLink.href = currentPdfUrl;
+  } catch (error) {
+    console.error("PDF preview load failed:", error);
+    pdfFrame.style.display = "none";
+    pdfFallback.style.display = "block";
+    pdfFallback.textContent = `PDF preview could not be loaded: ${error.message}`;
+  }
+}
+
+async function reloadPdf() {
+  if (!currentInvoice) return;
+  statusMessage.textContent = "Reloading PDF preview...";
+  await loadPdfPreview(currentInvoice);
+  statusMessage.textContent = "PDF preview reloaded.";
 }
 
 function renderInvoiceHeaderForm(invoice) {
@@ -223,7 +271,6 @@ async function saveChanges() {
 
     const editedHeader = getHeaderValues();
     const editedLines = getEditedLines();
-
     const auditEvents = buildHeaderAuditEvents(currentInvoice, editedHeader);
 
     const { error: updateInvoiceError } = await supabase
@@ -388,6 +435,7 @@ function setBusyState(isBusy, message) {
   saveButton.disabled = isBusy;
   approveButton.disabled = isBusy;
   duplicateButton.disabled = isBusy;
+  reloadPdfButton.disabled = isBusy;
   statusMessage.textContent = message;
 }
 
