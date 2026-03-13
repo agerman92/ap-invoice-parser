@@ -31,6 +31,85 @@ function extractMatch(text, regex, group = 1, fallback = "") {
   return match ? String(match[group] || "").trim() : fallback;
 }
 
+function compactSpaces(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function dedupeLines(lines) {
+  const seen = new Set();
+  const out = [];
+
+  for (const line of lines) {
+    const key = [
+      line.line_number,
+      line.part_number,
+      line.description,
+      line.quantity,
+      line.unit_price,
+      line.line_total,
+      line.origin
+    ].join("|");
+
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(line);
+    }
+  }
+
+  out.sort((a, b) => a.line_number - b.line_number);
+  return out;
+}
+
+function parseManitouPartLines(invoiceText) {
+  const lines = [];
+
+  // Pattern 1: spaced row layout (common on larger invoices)
+  const spacedPattern =
+    /(?:^|\n)\s*(\d+)\s+([A-Z0-9]+)\s+(.+?)\s+(\d+)\s+([0-9,]+\.[0-9]{2})\s+(\d+)\s*%\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})\s*\n\s*Origin\s*:\s*([A-Z]{2,})/gms;
+
+  let match;
+  while ((match = spacedPattern.exec(invoiceText)) !== null) {
+    lines.push({
+      line_number: Number(match[1]),
+      line_type: "PART",
+      part_number: compactSpaces(match[2]),
+      description: compactSpaces(match[3]),
+      origin: compactSpaces(match[9]),
+      quantity: cleanNumber(match[4]),
+      unit_price: cleanNumber(match[5]),
+      discount_percent: cleanNumber(match[6]),
+      net_unit_price: cleanNumber(match[7]),
+      line_total: cleanNumber(match[8])
+    });
+  }
+
+  // Pattern 2: compact multi-line layout from pdf-parse
+  // Example:
+  // 1
+  // 210722
+  // CAP/ VENTED FUEL172.9824 %55.4655.46
+  // Origin :US
+  const compactPattern =
+    /(?:^|\n)\s*(\d+)\s*\n\s*([A-Z0-9]+)\s*\n\s*(.+?)(\d+)([0-9,]+\.[0-9]{2})(\d+)\s*%([0-9,]+\.[0-9]{2})([0-9,]+\.[0-9]{2})\s*\n\s*Origin\s*:\s*([A-Z]{2,})/gms;
+
+  while ((match = compactPattern.exec(invoiceText)) !== null) {
+    lines.push({
+      line_number: Number(match[1]),
+      line_type: "PART",
+      part_number: compactSpaces(match[2]),
+      description: compactSpaces(match[3]),
+      origin: compactSpaces(match[9]),
+      quantity: cleanNumber(match[4]),
+      unit_price: cleanNumber(match[5]),
+      discount_percent: cleanNumber(match[6]),
+      net_unit_price: cleanNumber(match[7]),
+      line_total: cleanNumber(match[8])
+    });
+  }
+
+  return dedupeLines(lines);
+}
+
 function parseManitouInvoice(invoiceText) {
   const vendor = extractMatch(
     invoiceText,
@@ -39,17 +118,17 @@ function parseManitouInvoice(invoiceText) {
 
   const invoice_number = extractMatch(
     invoiceText,
-    /INVOICE\s+(\d{6,})/i
-  );
+    /INVOICE\s*\n?\s*(\d{6,})\s*Date\s*:?\s*\n?\s*[0-9]{2}\/[0-9]{2}\/[0-9]{4}/i
+  ) || extractMatch(invoiceText, /INVOICE\s*\n?\s*(\d{6,})/i);
 
   const invoice_date =
     extractMatch(
       invoiceText,
-      /INVOICE\s+\d{6,}[\s\S]{0,40}?Date\s*:\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i
+      /INVOICE\s*\n?\s*\d{6,}\s*Date\s*:?\s*\n?\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i
     ) ||
     extractMatch(
       invoiceText,
-      /\bDate\s*:\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i
+      /Date\s*:?\s*\n?\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i
     );
 
   const shipment_number = extractMatch(
@@ -59,93 +138,37 @@ function parseManitouInvoice(invoiceText) {
 
   const order_number = extractMatch(
     invoiceText,
-    /Order Number\s*:\s*([0-9]+)/i
+    /Order Number\s*:?\s*([0-9]+)/i
   );
 
   const po_number = extractMatch(
     invoiceText,
-    /PO Number\s*:\s*([0-9]+)/i
+    /PO Number\s*:?\s*([0-9]+)/i
   );
 
   const terms =
-    extractMatch(
-      invoiceText,
-      /Terms of payment\s*:\s*([^\n]+)/i
-    ) ||
-    extractMatch(
-      invoiceText,
-      /AUTO FREIGHT CHARGE\s+([A-Za-z0-9 ]+)/i
-    );
+    extractMatch(invoiceText, /\b(Net\s*\d+)\b/i) ||
+    extractMatch(invoiceText, /Terms of payment\s*:?\s*([^\n]+)/i);
 
-  const subtotal = cleanNumber(
-    extractMatch(
-      invoiceText,
-      /Subtotal[\s\S]{0,120}?\n\s*([0-9,]+\.[0-9]{2})\s+[A-Z]{3}\s+[0-9,]+\.[0-9]{2}/i
-    )
+  const totalsMatch = invoiceText.match(
+    /Subtotal[\s\S]{0,100}?([0-9,]+\.[0-9]{2})\s*([A-Z]{3})\s*([0-9,]+\.[0-9]{2})/i
   );
 
-  const currency =
-    extractMatch(
-      invoiceText,
-      /Subtotal[\s\S]{0,120}?\n\s*[0-9,]+\.[0-9]{2}\s+([A-Z]{3})\s+[0-9,]+\.[0-9]{2}/i
-    ) || "USD";
-
-  const total_invoice = cleanNumber(
-    extractMatch(
-      invoiceText,
-      /Subtotal[\s\S]{0,120}?\n\s*[0-9,]+\.[0-9]{2}\s+[A-Z]{3}\s+([0-9,]+\.[0-9]{2})/i
-    )
-  );
+  const subtotal = totalsMatch ? cleanNumber(totalsMatch[1]) : 0;
+  const currency = totalsMatch ? compactSpaces(totalsMatch[2]) : "USD";
+  const total_invoice = totalsMatch ? cleanNumber(totalsMatch[3]) : 0;
 
   const drop_ship_charge = cleanNumber(
-    extractMatch(invoiceText, /DROP SHIPMENT\s+([0-9,]+\.[0-9]{2})/i)
+    extractMatch(invoiceText, /DROP\s*SHIPMENT\s*([0-9,]+\.[0-9]{2})/i)
   );
 
   const freight_charge = cleanNumber(
-    extractMatch(invoiceText, /FREIGHT CHARGE\s+([0-9,]+\.[0-9]{2})/i)
+    extractMatch(invoiceText, /FREIGHT\s*CHARGE\s*([0-9,]+\.[0-9]{2})/i)
   );
 
   const misc_charges = 0;
 
-  const lines = [];
-  const rows = invoiceText.split("\n");
-
-  let awaitingOriginForIndex = -1;
-
-  for (const rawRow of rows) {
-    const row = rawRow.trim();
-    if (!row) continue;
-
-    const originMatch = row.match(/^Origin\s*:\s*(.+)$/i);
-    if (originMatch) {
-      if (awaitingOriginForIndex >= 0 && lines[awaitingOriginForIndex]) {
-        lines[awaitingOriginForIndex].origin = originMatch[1].trim();
-        awaitingOriginForIndex = -1;
-      }
-      continue;
-    }
-
-    const lineMatch = row.match(
-      /^(\d+)\s+([A-Z0-9]+)\s+(.+?)\s+(\d+)\s+([0-9,]+\.[0-9]{2})\s+(\d+)\s*%\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})$/i
-    );
-
-    if (lineMatch) {
-      lines.push({
-        line_number: Number(lineMatch[1]),
-        line_type: "PART",
-        part_number: lineMatch[2].trim(),
-        description: lineMatch[3].trim(),
-        origin: "",
-        quantity: cleanNumber(lineMatch[4]),
-        unit_price: cleanNumber(lineMatch[5]),
-        discount_percent: cleanNumber(lineMatch[6]),
-        net_unit_price: cleanNumber(lineMatch[7]),
-        line_total: cleanNumber(lineMatch[8])
-      });
-
-      awaitingOriginForIndex = lines.length - 1;
-    }
-  }
+  const lines = parseManitouPartLines(invoiceText);
 
   if (drop_ship_charge > 0) {
     lines.push({
@@ -260,7 +283,7 @@ exports.handler = async (event) => {
       return jsonResponse(400, {
         success: false,
         error: "This deterministic parser currently supports Manitou invoices only.",
-        textPreview: invoiceText.slice(0, 1200)
+        textPreview: invoiceText.slice(0, 1500)
       });
     }
 
