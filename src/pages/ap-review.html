@@ -4,30 +4,156 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AP Review</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      box-sizing: border-box;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    h1 {
+      margin-top: 0;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      align-items: end;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 220px;
+    }
+
+    .field-group label {
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .field-group input,
+    .field-group select {
+      padding: 8px;
+      font-size: 14px;
+    }
+
+    .status-row {
+      margin-bottom: 12px;
+      font-weight: bold;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      min-width: 1250px;
+    }
+
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #f3f3f3;
+    }
+
+    .muted {
+      color: #666;
+      font-size: 13px;
+    }
+
+    .button-inline {
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+  </style>
 </head>
 <body>
   <h1>AP Invoice Review</h1>
 
-  <div id="statusMessage">Loading invoices...</div>
+  <div class="toolbar">
+    <div class="field-group">
+      <label for="poSearch">Search PO Number</label>
+      <input id="poSearch" type="text" placeholder="Enter PO number" />
+    </div>
 
-  <table border="1" cellpadding="8" cellspacing="0" width="100%">
-    <thead>
-      <tr>
-        <th>Created</th>
-        <th>File Name</th>
-        <th>Vendor</th>
-        <th>Invoice #</th>
-        <th>Invoice Date</th>
-        <th>Total</th>
-        <th>Status</th>
-        <th>Review</th>
-        <th>Duplicate</th>
-        <th>Warnings</th>
-        <th>Open</th>
-      </tr>
-    </thead>
-    <tbody id="invoiceTableBody"></tbody>
-  </table>
+    <div class="field-group">
+      <label for="statusFilter">Status</label>
+      <select id="statusFilter">
+        <option value="">All</option>
+        <option value="uploaded">uploaded</option>
+        <option value="queued">queued</option>
+        <option value="extracting">extracting</option>
+        <option value="needs_review">needs_review</option>
+        <option value="approved">approved</option>
+        <option value="duplicate">duplicate</option>
+        <option value="failed">failed</option>
+      </select>
+    </div>
+
+    <div class="field-group">
+      <label for="reviewFilter">Review Status</label>
+      <select id="reviewFilter">
+        <option value="">All</option>
+        <option value="unreviewed">unreviewed</option>
+        <option value="in_review">in_review</option>
+        <option value="approved">approved</option>
+        <option value="rejected">rejected</option>
+      </select>
+    </div>
+
+    <div class="field-group">
+      <label for="duplicateFilter">Duplicate Status</label>
+      <select id="duplicateFilter">
+        <option value="">All</option>
+        <option value="clear">clear</option>
+        <option value="suspected">suspected</option>
+        <option value="confirmed">confirmed</option>
+      </select>
+    </div>
+
+    <button id="clearFiltersButton" class="button-inline" type="button">Clear Filters</button>
+    <button id="refreshButton" class="button-inline" type="button">Refresh</button>
+  </div>
+
+  <div id="statusMessage" class="status-row">Loading invoices...</div>
+  <div class="muted">Tip: PO search is case-insensitive and matches partial values.</div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Created</th>
+          <th>File Name</th>
+          <th>Vendor</th>
+          <th>Invoice #</th>
+          <th>PO Number</th>
+          <th>Invoice Date</th>
+          <th>Total</th>
+          <th>Status</th>
+          <th>Review</th>
+          <th>Duplicate</th>
+          <th>Warnings</th>
+          <th>Open</th>
+        </tr>
+      </thead>
+      <tbody id="invoiceTableBody"></tbody>
+    </table>
+  </div>
 
   <script type="module" src="../js/ap-review.js"></script>
 </body>
