@@ -84,13 +84,23 @@ function normalizeError(error: unknown): {
 async function claimJob(
   supabase: ReturnType<typeof createClient>,
   workerId: string,
-) {
+): Promise<JobRow | null> {
   const { data, error } = await supabase.rpc("claim_next_ap_invoice_job", {
     p_worker: workerId,
   });
 
   if (error) throw error;
-  return data as JobRow | null;
+  if (!data) return null;
+
+  return {
+    id: Number(data.id),
+    invoice_id: String(data.invoice_id),
+    job_type: String(data.job_type),
+    status: String(data.status),
+    attempt_count: Number(data.attempt_count ?? 0),
+    max_attempts: Number(data.max_attempts ?? 0),
+    payload: (data.payload ?? {}) as Record<string, unknown>,
+  };
 }
 
 async function markJobCompleted(
