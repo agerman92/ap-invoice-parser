@@ -1,9 +1,13 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { extractPdfText } from "../_shared/pdf.ts";
-import { extractStructuredInvoice } from "../_shared/openai.ts";
+import { extractPdfLayout } from "../_shared/pdf-layout.ts";
+import { parseInvoiceWithRouter } from "../_shared/parser-router.ts";
 import { validateInvoiceExtraction } from "../_shared/validation.ts";
 import type { InvoiceExtraction } from "../_shared/invoice-schema.ts";
+
+// keep the rest of your existing helper functions from your current worker:
+// normalizeVendorName, normalizeInvoiceNumber, safeDate, claimJob, markJobCompleted,
+// markJobRetry, detectDuplicate, writeInvoiceDraft, etc.
 
 type JobRow = {
   id: number;
@@ -29,11 +33,8 @@ function normalizeInvoiceNumber(value: string | null | undefined): string | null
 
 function safeDate(value: string | null | undefined): string | null {
   if (!value?.trim()) return null;
-
-  // Keep simple on write; AP can correct if vendor format is odd.
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
-
   return parsed.toISOString().slice(0, 10);
 }
 
@@ -41,15 +42,11 @@ async function claimJob(supabase: ReturnType<typeof createClient>, workerId: str
   const { data, error } = await supabase.rpc("claim_next_ap_invoice_job", {
     p_worker: workerId,
   });
-
   if (error) throw error;
   return data as JobRow | null;
 }
 
-async function markJobCompleted(
-  supabase: ReturnType<typeof createClient>,
-  jobId: number,
-) {
+async function markJobCompleted(supabase: ReturnType<typeof createClient>, jobId: number) {
   const { error } = await supabase
     .from("ap_invoice_jobs")
     .update({
@@ -111,7 +108,7 @@ async function detectDuplicate(
 
   const { data, error } = await supabase
     .from("ap_invoices")
-    .select("id,total_invoice,invoice_date_parsed")
+    .select("id")
     .eq("vendor_normalized", vendorNormalized)
     .eq("invoice_number_normalized", invoiceNumberNormalized)
     .neq("id", invoiceId)
@@ -135,7 +132,6 @@ async function detectDuplicate(
 async function writeInvoiceDraft(
   supabase: ReturnType<typeof createClient>,
   invoiceId: string,
-  extractionId: string,
   parsed: InvoiceExtraction,
   warnings: unknown[],
 ) {
@@ -173,7 +169,6 @@ async function writeInvoiceDraft(
       warnings,
       duplicate_status: duplicate.duplicateStatus,
       duplicate_of_invoice_id: duplicate.duplicateOfInvoiceId,
-      extraction_version: supabase.rpc ? undefined : undefined,
       status: "needs_review",
       review_status: "unreviewed",
       parse_error: null,
@@ -210,17 +205,6 @@ async function writeInvoiceDraft(
 
     if (insertLinesError) throw insertLinesError;
   }
-
-  const { error: extractionLinkError } = await supabase
-    .from("ap_invoices")
-    .update({
-      extraction_version: 1,
-    })
-    .eq("id", invoiceId);
-
-  if (extractionLinkError) throw extractionLinkError;
-
-  return extractionId;
 }
 
 async function processOneJob(
@@ -228,7 +212,6 @@ async function processOneJob(
   workerId: string,
 ): Promise<boolean> {
   const job = await claimJob(supabase, workerId);
-
   if (!job) return false;
 
   let extractionId: string | null = null;
@@ -241,9 +224,7 @@ async function processOneJob(
       .single();
 
     if (invoiceError) throw invoiceError;
-    if (!invoice?.storage_path) {
-      throw new Error("Invoice storage_path is missing.");
-    }
+    if (!invoice?.storage_path) throw new Error("Invoice storage_path is missing.");
 
     await supabase
       .from("ap_invoices")
@@ -260,7 +241,7 @@ async function processOneJob(
         invoice_id: job.invoice_id,
         storage_path: invoice.storage_path,
         status: "processing",
-        parser_version: "v1",
+        parser_version: "router-v2",
         prompt_version: "v1",
         schema_version: "v1",
         model: "gpt-5",
@@ -278,41 +259,31 @@ async function processOneJob(
     if (downloadError) throw downloadError;
 
     const bytes = new Uint8Array(await fileData.arrayBuffer());
-    const { text: rawText } = await extractPdfText(bytes);
-
-    const parsed = await extractStructuredInvoice(rawText);
+    const layout = await extractPdfLayout(bytes);
+    const routed = await parseInvoiceWithRouter(layout);
+    const parsed = routed.parsed;
     const warnings = validateInvoiceExtraction(parsed);
 
     const { error: extractionUpdateError } = await supabase
       .from("ap_invoice_extractions")
       .update({
         status: "completed",
-        raw_text: rawText,
+        raw_text: layout.plainText,
         structured_json: parsed,
         warnings,
+        parser_version: routed.parserVersion,
         completed_at: new Date().toISOString(),
       })
       .eq("id", extractionId);
 
     if (extractionUpdateError) throw extractionUpdateError;
 
-    await writeInvoiceDraft(supabase, job.invoice_id, extractionId, parsed, warnings);
-
-    const { error: extractedStatusError } = await supabase
-      .from("ap_invoices")
-      .update({
-        status: "needs_review",
-      })
-      .eq("id", job.invoice_id);
-
-    if (extractedStatusError) throw extractedStatusError;
+    await writeInvoiceDraft(supabase, job.invoice_id, parsed, warnings);
 
     await markJobCompleted(supabase, job.id);
-
     return true;
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
 
     if (extractionId) {
       await supabase
@@ -345,10 +316,7 @@ Deno.serve(async (req) => {
 
   try {
     const url = new URL(req.url);
-    const batchSize = Math.min(
-      Number(url.searchParams.get("batch") || 1),
-      10,
-    );
+    const batchSize = Math.min(Number(url.searchParams.get("batch") || 1), 10);
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -364,15 +332,9 @@ Deno.serve(async (req) => {
       processed += 1;
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        processed,
-      }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
+    return new Response(JSON.stringify({ success: true, processed }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (error) {
     return new Response(
       JSON.stringify({
