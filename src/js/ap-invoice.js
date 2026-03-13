@@ -8,14 +8,26 @@ const saveButton = document.getElementById("saveButton");
 const approveButton = document.getElementById("approveButton");
 const duplicateButton = document.getElementById("duplicateButton");
 const reloadPdfButton = document.getElementById("reloadPdfButton");
+const reloadDebugButton = document.getElementById("reloadDebugButton");
 const pdfFrame = document.getElementById("pdfFrame");
 const pdfFallback = document.getElementById("pdfFallback");
 const openPdfLink = document.getElementById("openPdfLink");
 
+const debugExtractionId = document.getElementById("debugExtractionId");
+const debugParserVersion = document.getElementById("debugParserVersion");
+const debugExtractionStatus = document.getElementById("debugExtractionStatus");
+const debugModel = document.getElementById("debugModel");
+const debugStartedAt = document.getElementById("debugStartedAt");
+const debugCompletedAt = document.getElementById("debugCompletedAt");
+const debugErrorMessage = document.getElementById("debugErrorMessage");
+const debugWarnings = document.getElementById("debugWarnings");
+const debugStructuredJson = document.getElementById("debugStructuredJson");
+const debugRawText = document.getElementById("debugRawText");
+
 let currentInvoice = null;
 let currentLines = [];
 let currentUser = null;
-let currentPdfUrl = null;
+let latestExtraction = null;
 
 async function initPage() {
   try {
@@ -31,6 +43,7 @@ async function initPage() {
     approveButton.addEventListener("click", approveInvoice);
     duplicateButton.addEventListener("click", markDuplicate);
     reloadPdfButton.addEventListener("click", reloadPdf);
+    reloadDebugButton.addEventListener("click", reloadDebugPanel);
   } catch (error) {
     console.error(error);
     statusMessage.textContent = `Error initializing page: ${error.message}`;
@@ -79,19 +92,20 @@ async function loadInvoiceDetail() {
   renderWarnings(invoice.warnings);
   renderLines(currentLines);
   await loadPdfPreview(invoice);
+  await loadLatestExtraction(invoice.id);
 
   statusMessage.textContent = "Invoice loaded.";
 }
 
 async function loadPdfPreview(invoice) {
-  pdfFallback.style.display = "none";
-  pdfFrame.style.display = "block";
+  pdfFallback.classList.add("hidden");
+  pdfFrame.classList.remove("hidden");
   pdfFrame.removeAttribute("src");
   openPdfLink.href = "#";
 
   if (!invoice?.storage_path) {
-    pdfFrame.style.display = "none";
-    pdfFallback.style.display = "block";
+    pdfFrame.classList.add("hidden");
+    pdfFallback.classList.remove("hidden");
     pdfFallback.textContent = "No storage path found for this invoice PDF.";
     return;
   }
@@ -106,15 +120,48 @@ async function loadPdfPreview(invoice) {
       throw new Error("No signed PDF URL returned.");
     }
 
-    currentPdfUrl = data.signedUrl;
-    pdfFrame.src = currentPdfUrl;
-    openPdfLink.href = currentPdfUrl;
+    pdfFrame.src = data.signedUrl;
+    openPdfLink.href = data.signedUrl;
   } catch (error) {
     console.error("PDF preview load failed:", error);
-    pdfFrame.style.display = "none";
-    pdfFallback.style.display = "block";
+    pdfFrame.classList.add("hidden");
+    pdfFallback.classList.remove("hidden");
     pdfFallback.textContent = `PDF preview could not be loaded: ${error.message}`;
   }
+}
+
+async function loadLatestExtraction(invoiceId) {
+  const { data, error } = await supabase
+    .from("ap_invoice_extractions")
+    .select(`
+      id,
+      invoice_id,
+      status,
+      parser_version,
+      prompt_version,
+      schema_version,
+      model,
+      raw_text,
+      structured_json,
+      warnings,
+      started_at,
+      completed_at,
+      error_message,
+      created_at
+    `)
+    .eq("invoice_id", invoiceId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Error loading extraction debug:", error);
+    renderDebugFallback(`Failed to load extraction debug: ${error.message}`);
+    return;
+  }
+
+  latestExtraction = data || null;
+  renderDebugPanel(latestExtraction);
 }
 
 async function reloadPdf() {
@@ -122,6 +169,13 @@ async function reloadPdf() {
   statusMessage.textContent = "Reloading PDF preview...";
   await loadPdfPreview(currentInvoice);
   statusMessage.textContent = "PDF preview reloaded.";
+}
+
+async function reloadDebugPanel() {
+  if (!currentInvoice) return;
+  statusMessage.textContent = "Refreshing debug panel...";
+  await loadLatestExtraction(currentInvoice.id);
+  statusMessage.textContent = "Debug panel refreshed.";
 }
 
 function renderInvoiceHeaderForm(invoice) {
@@ -225,6 +279,54 @@ function renderLines(lines) {
       <td><input class="line-input" data-field="line_total" type="number" step="0.01" value="${line.line_total ?? 0}" /></td>
     </tr>
   `).join("");
+}
+
+function renderDebugPanel(extraction) {
+  if (!extraction) {
+    renderDebugFallback("No extraction record found for this invoice yet.");
+    return;
+  }
+
+  debugExtractionId.textContent = extraction.id || "";
+  debugParserVersion.textContent = extraction.parser_version || "";
+  debugExtractionStatus.textContent = extraction.status || "";
+  debugModel.textContent = extraction.model || "";
+  debugStartedAt.textContent = formatDateTime(extraction.started_at);
+  debugCompletedAt.textContent = formatDateTime(extraction.completed_at);
+  debugErrorMessage.textContent = extraction.error_message || "None";
+
+  const storedWarnings = Array.isArray(extraction.warnings) ? extraction.warnings : [];
+  if (!storedWarnings.length) {
+    debugWarnings.innerHTML = "<p>No stored warnings.</p>";
+  } else {
+    debugWarnings.innerHTML = `
+      <ul>
+        ${storedWarnings.map((warning) => `
+          <li>
+            <strong>${escapeHtml(warning.code || "")}</strong>:
+            ${escapeHtml(warning.message || "")}
+            (${escapeHtml(warning.severity || "")})
+          </li>
+        `).join("")}
+      </ul>
+    `;
+  }
+
+  debugStructuredJson.textContent = prettyJson(extraction.structured_json);
+  debugRawText.textContent = (extraction.raw_text || "").slice(0, 12000) || "No raw text stored.";
+}
+
+function renderDebugFallback(message) {
+  debugExtractionId.textContent = "";
+  debugParserVersion.textContent = "";
+  debugExtractionStatus.textContent = "";
+  debugModel.textContent = "";
+  debugStartedAt.textContent = "";
+  debugCompletedAt.textContent = "";
+  debugErrorMessage.textContent = message;
+  debugWarnings.innerHTML = "<p>No stored warnings.</p>";
+  debugStructuredJson.textContent = "";
+  debugRawText.textContent = "";
 }
 
 function getHeaderValues() {
@@ -436,7 +538,22 @@ function setBusyState(isBusy, message) {
   approveButton.disabled = isBusy;
   duplicateButton.disabled = isBusy;
   reloadPdfButton.disabled = isBusy;
+  reloadDebugButton.disabled = isBusy;
   statusMessage.textContent = message;
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleString();
+}
+
+function prettyJson(value) {
+  if (value == null) return "";
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 }
 
 function escapeHtml(value) {

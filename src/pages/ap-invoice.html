@@ -10,13 +10,14 @@
       margin: 0;
       padding: 16px;
       box-sizing: border-box;
+      background: #fafafa;
     }
 
     * {
       box-sizing: border-box;
     }
 
-    h1, h2 {
+    h1, h2, h3 {
       margin-top: 0;
     }
 
@@ -157,6 +158,90 @@
       font-size: 13px;
     }
 
+    .debug-panel {
+      margin-top: 24px;
+      border: 1px solid #d9d9d9;
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .debug-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+      background: #f3f3f3;
+      border-bottom: 1px solid #d9d9d9;
+      flex-wrap: wrap;
+    }
+
+    .debug-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(240px, 1fr));
+      gap: 12px 16px;
+      padding: 12px;
+    }
+
+    .debug-card {
+      border: 1px solid #e3e3e3;
+      border-radius: 6px;
+      padding: 10px;
+      background: #fcfcfc;
+    }
+
+    .debug-label {
+      font-size: 12px;
+      font-weight: bold;
+      color: #555;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+
+    .debug-value {
+      font-size: 14px;
+      word-break: break-word;
+    }
+
+    .debug-full {
+      grid-column: 1 / -1;
+    }
+
+    .debug-pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      background: #111;
+      color: #f1f1f1;
+      padding: 12px;
+      border-radius: 6px;
+      max-height: 320px;
+      overflow: auto;
+      margin: 0;
+    }
+
+    .debug-text-preview {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      background: #f8f8f8;
+      padding: 12px;
+      border-radius: 6px;
+      max-height: 260px;
+      overflow: auto;
+      margin: 0;
+      border: 1px solid #e3e3e3;
+    }
+
+    .hidden {
+      display: none;
+    }
+
     @media (max-width: 1100px) {
       .page-layout {
         grid-template-columns: 1fr;
@@ -164,6 +249,11 @@
 
       .pdf-frame-wrap {
         height: 500px;
+      }
+
+      .debug-grid,
+      .header-grid {
+        grid-template-columns: 1fr;
       }
     }
   </style>
@@ -193,7 +283,7 @@
 
       <div class="pdf-frame-wrap">
         <iframe id="pdfFrame" title="Invoice PDF Preview"></iframe>
-        <div id="pdfFallback" class="pdf-fallback" style="display:none;">
+        <div id="pdfFallback" class="pdf-fallback hidden">
           PDF preview could not be loaded.
         </div>
       </div>
@@ -230,6 +320,65 @@
           <tbody id="lineTableBody"></tbody>
         </table>
       </div>
+
+      <section class="debug-panel">
+        <div class="debug-header">
+          <h2>Parser Debug Panel</h2>
+          <button id="reloadDebugButton" type="button">Refresh Debug</button>
+        </div>
+
+        <div class="debug-grid">
+          <div class="debug-card">
+            <div class="debug-label">Extraction ID</div>
+            <div id="debugExtractionId" class="debug-value"></div>
+          </div>
+
+          <div class="debug-card">
+            <div class="debug-label">Parser Version</div>
+            <div id="debugParserVersion" class="debug-value"></div>
+          </div>
+
+          <div class="debug-card">
+            <div class="debug-label">Extraction Status</div>
+            <div id="debugExtractionStatus" class="debug-value"></div>
+          </div>
+
+          <div class="debug-card">
+            <div class="debug-label">Model</div>
+            <div id="debugModel" class="debug-value"></div>
+          </div>
+
+          <div class="debug-card">
+            <div class="debug-label">Started At</div>
+            <div id="debugStartedAt" class="debug-value"></div>
+          </div>
+
+          <div class="debug-card">
+            <div class="debug-label">Completed At</div>
+            <div id="debugCompletedAt" class="debug-value"></div>
+          </div>
+
+          <div class="debug-card debug-full">
+            <div class="debug-label">Extraction Error</div>
+            <div id="debugErrorMessage" class="debug-value"></div>
+          </div>
+
+          <div class="debug-card debug-full">
+            <div class="debug-label">Stored Warnings</div>
+            <div id="debugWarnings"></div>
+          </div>
+
+          <div class="debug-card debug-full">
+            <div class="debug-label">Structured JSON</div>
+            <pre id="debugStructuredJson" class="debug-pre"></pre>
+          </div>
+
+          <div class="debug-card debug-full">
+            <div class="debug-label">Raw Text Preview</div>
+            <pre id="debugRawText" class="debug-text-preview"></pre>
+          </div>
+        </div>
+      </section>
     </section>
   </div>
 
