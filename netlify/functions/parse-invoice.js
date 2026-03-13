@@ -1,6 +1,5 @@
 const Busboy = require("busboy");
-const pdfParseModule = require("pdf-parse");
-const pdf = pdfParseModule.default || pdfParseModule;
+const pdf = require("pdf-parse");
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1";
