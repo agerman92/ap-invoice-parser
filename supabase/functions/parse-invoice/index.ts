@@ -3,19 +3,19 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import OpenAI from "https://esm.sh/openai@4.104.0";
 import pdf from "npm:@cedrugs/pdf-parse";
 
-const openai = new OpenAI({
-  apiKey: Deno.env.get("OPENAI_API_KEY"),
-});
-
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-);
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...corsHeaders,
+    },
   });
 }
 
@@ -46,9 +46,33 @@ function getResponseText(responseJson: any) {
 }
 
 serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", {
+      headers: corsHeaders,
+    });
+  }
+
   let invoiceId: string | null = null;
 
   try {
+    const openAiKey = Deno.env.get("OPENAI_API_KEY");
+    if (!openAiKey) {
+      throw new Error("OPENAI_API_KEY is missing in Supabase secrets.");
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new Error("Supabase server environment variables are missing.");
+    }
+
+    const openai = new OpenAI({
+      apiKey: openAiKey,
+    });
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+
     const body = await req.json();
     invoiceId = body?.invoiceId ?? null;
     const storagePath = body?.storagePath ?? null;
@@ -284,13 +308,19 @@ serve(async (req) => {
       error instanceof Error ? error.message : "Unknown server error.";
 
     if (invoiceId) {
-      await supabase
-        .from("ap_invoices")
-        .update({
-          status: "failed",
-          parse_error: message,
-        })
-        .eq("id", invoiceId);
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+      if (supabaseUrl && serviceRoleKey) {
+        const supabase = createClient(supabaseUrl, serviceRoleKey);
+        await supabase
+          .from("ap_invoices")
+          .update({
+            status: "failed",
+            parse_error: message,
+          })
+          .eq("id", invoiceId);
+      }
     }
 
     return json(
