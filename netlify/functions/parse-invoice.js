@@ -13,6 +13,7 @@ function jsonResponse(statusCode, payload) {
 function normalizeText(text) {
   return (text || "")
     .replace(/\r/g, "")
+    .replace(/\u00A0/g, " ")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -33,24 +34,27 @@ function extractMatch(text, regex, group = 1, fallback = "") {
 function parseManitouInvoice(invoiceText) {
   const vendor = extractMatch(
     invoiceText,
-    /(MANITOU NORTH AMERICA,\s*LLC)/i,
-    1,
-    ""
+    /(MANITOU NORTH AMERICA,\s*LLC)/i
   );
 
   const invoice_number = extractMatch(
     invoiceText,
-    /INVOICE\s+(\d+)/i
+    /INVOICE\s+(\d{6,})/i
   );
 
-  const invoice_date = extractMatch(
-    invoiceText,
-    /INVOICE\s+\d+\s+Date:\s*([0-9/]+)/i
-  );
+  const invoice_date =
+    extractMatch(
+      invoiceText,
+      /INVOICE\s+\d{6,}[\s\S]{0,40}?Date\s*:\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i
+    ) ||
+    extractMatch(
+      invoiceText,
+      /\bDate\s*:\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/i
+    );
 
   const shipment_number = extractMatch(
     invoiceText,
-    /\*\*SHIPMENT\s*:\s*(\d+)\s*\*\*/i
+    /SHIPMENT\s*:\s*(\d{6,})/i
   );
 
   const order_number = extractMatch(
@@ -63,29 +67,33 @@ function parseManitouInvoice(invoiceText) {
     /PO Number\s*:\s*([0-9]+)/i
   );
 
-  const terms = extractMatch(
-    invoiceText,
-    /Terms of payment\s*:\s*([^\n]+)/i
-  );
+  const terms =
+    extractMatch(
+      invoiceText,
+      /Terms of payment\s*:\s*([^\n]+)/i
+    ) ||
+    extractMatch(
+      invoiceText,
+      /AUTO FREIGHT CHARGE\s+([A-Za-z0-9 ]+)/i
+    );
 
   const subtotal = cleanNumber(
     extractMatch(
       invoiceText,
-      /Subtotal\s+Total Invoice Amount to\s*pay \(Charges included\)\s*\n\s*([0-9,]+\.[0-9]{2})/i
+      /Subtotal[\s\S]{0,120}?\n\s*([0-9,]+\.[0-9]{2})\s+[A-Z]{3}\s+[0-9,]+\.[0-9]{2}/i
     )
   );
 
-  const currency = extractMatch(
-    invoiceText,
-    /Subtotal\s+Total Invoice Amount to\s*pay \(Charges included\)\s*\n\s*[0-9,]+\.[0-9]{2}\s+([A-Z]{3})/i,
-    1,
-    "USD"
-  );
+  const currency =
+    extractMatch(
+      invoiceText,
+      /Subtotal[\s\S]{0,120}?\n\s*[0-9,]+\.[0-9]{2}\s+([A-Z]{3})\s+[0-9,]+\.[0-9]{2}/i
+    ) || "USD";
 
   const total_invoice = cleanNumber(
     extractMatch(
       invoiceText,
-      /Subtotal\s+Total Invoice Amount to\s*pay \(Charges included\)\s*\n\s*[0-9,]+\.[0-9]{2}\s+[A-Z]{3}\s+([0-9,]+\.[0-9]{2})/i
+      /Subtotal[\s\S]{0,120}?\n\s*[0-9,]+\.[0-9]{2}\s+[A-Z]{3}\s+([0-9,]+\.[0-9]{2})/i
     )
   );
 
@@ -100,10 +108,8 @@ function parseManitouInvoice(invoiceText) {
   const misc_charges = 0;
 
   const lines = [];
-
   const rows = invoiceText.split("\n");
 
-  let pendingOrigin = "";
   let awaitingOriginForIndex = -1;
 
   for (const rawRow of rows) {
@@ -112,9 +118,8 @@ function parseManitouInvoice(invoiceText) {
 
     const originMatch = row.match(/^Origin\s*:\s*(.+)$/i);
     if (originMatch) {
-      pendingOrigin = originMatch[1].trim();
       if (awaitingOriginForIndex >= 0 && lines[awaitingOriginForIndex]) {
-        lines[awaitingOriginForIndex].origin = pendingOrigin;
+        lines[awaitingOriginForIndex].origin = originMatch[1].trim();
         awaitingOriginForIndex = -1;
       }
       continue;
@@ -125,7 +130,7 @@ function parseManitouInvoice(invoiceText) {
     );
 
     if (lineMatch) {
-      const line = {
+      lines.push({
         line_number: Number(lineMatch[1]),
         line_type: "PART",
         part_number: lineMatch[2].trim(),
@@ -136,11 +141,9 @@ function parseManitouInvoice(invoiceText) {
         discount_percent: cleanNumber(lineMatch[6]),
         net_unit_price: cleanNumber(lineMatch[7]),
         line_total: cleanNumber(lineMatch[8])
-      };
+      });
 
-      lines.push(line);
       awaitingOriginForIndex = lines.length - 1;
-      continue;
     }
   }
 
@@ -199,9 +202,7 @@ function validateParsedInvoice(parsed) {
     "invoice_date",
     "po_number",
     "order_number",
-    "shipment_number",
-    "terms",
-    "currency"
+    "shipment_number"
   ];
 
   for (const key of requiredTop) {
@@ -258,7 +259,8 @@ exports.handler = async (event) => {
     if (!/MANITOU NORTH AMERICA,\s*LLC/i.test(invoiceText)) {
       return jsonResponse(400, {
         success: false,
-        error: "This deterministic parser currently supports Manitou invoices only."
+        error: "This deterministic parser currently supports Manitou invoices only.",
+        textPreview: invoiceText.slice(0, 1200)
       });
     }
 
@@ -269,7 +271,9 @@ exports.handler = async (event) => {
       return jsonResponse(500, {
         success: false,
         error: validationError,
-        extractedTextLength: invoiceText.length
+        extractedTextLength: invoiceText.length,
+        textPreview: invoiceText.slice(0, 1500),
+        partialExtracted: extracted
       });
     }
 
