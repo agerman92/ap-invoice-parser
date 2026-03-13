@@ -1,8 +1,5 @@
 const pdf = require("pdf-parse");
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
-
 function jsonResponse(statusCode, payload) {
   return {
     statusCode,
@@ -13,101 +10,7 @@ function jsonResponse(statusCode, payload) {
   };
 }
 
-function getResponseText(responseJson) {
-  if (
-    typeof responseJson.output_text === "string" &&
-    responseJson.output_text.trim()
-  ) {
-    return responseJson.output_text;
-  }
-
-  if (Array.isArray(responseJson.output)) {
-    for (const item of responseJson.output) {
-      if (item.type === "message" && Array.isArray(item.content)) {
-        for (const contentItem of item.content) {
-          if (
-            contentItem.type === "output_text" &&
-            typeof contentItem.text === "string"
-          ) {
-            return contentItem.text;
-          }
-        }
-      }
-    }
-  }
-
-  return "";
-}
-
-async function callOpenAIWithSchema({ systemPrompt, userPrompt, schema, schemaName }) {
-  const openAiPayload = {
-    model: OPENAI_MODEL,
-    input: [
-      {
-        role: "system",
-        content: [
-          {
-            type: "input_text",
-            text: systemPrompt
-          }
-        ]
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: userPrompt
-          }
-        ]
-      }
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: schemaName,
-        strict: true,
-        schema
-      }
-    }
-  };
-
-  const openAiResponse = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`
-    },
-    body: JSON.stringify(openAiPayload)
-  });
-
-  const rawResponseText = await openAiResponse.text();
-
-  if (!openAiResponse.ok) {
-    throw new Error(`OpenAI request failed: ${rawResponseText}`);
-  }
-
-  let openAiJson;
-  try {
-    openAiJson = JSON.parse(rawResponseText);
-  } catch (err) {
-    throw new Error(`OpenAI returned non-JSON response: ${rawResponseText}`);
-  }
-
-  const extractedText = getResponseText(openAiJson);
-
-  if (!extractedText) {
-    throw new Error("No structured output returned from OpenAI.");
-  }
-
-  try {
-    return JSON.parse(extractedText);
-  } catch (err) {
-    throw new Error(`Structured output was not valid JSON: ${extractedText}`);
-  }
-}
-
-function normalizeInvoiceText(text) {
+function normalizeText(text) {
   return (text || "")
     .replace(/\r/g, "")
     .replace(/[ \t]+\n/g, "\n")
@@ -115,107 +18,210 @@ function normalizeInvoiceText(text) {
     .trim();
 }
 
-function buildHeaderText(invoiceText) {
-  const head = invoiceText.slice(0, 6000);
-  const tail = invoiceText.slice(-3000);
-  return `${head}\n\n--- FINAL SECTION ---\n\n${tail}`;
+function cleanNumber(value) {
+  if (value === undefined || value === null) return 0;
+  const cleaned = String(value).replace(/,/g, "").trim();
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : 0;
 }
 
-function splitLinesIntoChunks(invoiceText, maxChars = 4500, overlapLines = 4) {
-  const rows = invoiceText
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .filter((line) => line.trim().length > 0);
+function extractMatch(text, regex, group = 1, fallback = "") {
+  const match = text.match(regex);
+  return match ? String(match[group] || "").trim() : fallback;
+}
 
-  const chunks = [];
-  let current = [];
-  let currentLen = 0;
+function parseManitouInvoice(invoiceText) {
+  const vendor = extractMatch(
+    invoiceText,
+    /(MANITOU NORTH AMERICA,\s*LLC)/i,
+    1,
+    ""
+  );
 
-  for (const row of rows) {
-    const rowLen = row.length + 1;
+  const invoice_number = extractMatch(
+    invoiceText,
+    /INVOICE\s+(\d+)/i
+  );
 
-    if (current.length > 0 && currentLen + rowLen > maxChars) {
-      chunks.push(current.join("\n"));
+  const invoice_date = extractMatch(
+    invoiceText,
+    /INVOICE\s+\d+\s+Date:\s*([0-9/]+)/i
+  );
 
-      const overlap = current.slice(-overlapLines);
-      current = [...overlap, row];
-      currentLen = current.join("\n").length + 1;
-    } else {
-      current.push(row);
-      currentLen += rowLen;
+  const shipment_number = extractMatch(
+    invoiceText,
+    /\*\*SHIPMENT\s*:\s*(\d+)\s*\*\*/i
+  );
+
+  const order_number = extractMatch(
+    invoiceText,
+    /Order Number\s*:\s*([0-9]+)/i
+  );
+
+  const po_number = extractMatch(
+    invoiceText,
+    /PO Number\s*:\s*([0-9]+)/i
+  );
+
+  const terms = extractMatch(
+    invoiceText,
+    /Terms of payment\s*:\s*([^\n]+)/i
+  );
+
+  const subtotal = cleanNumber(
+    extractMatch(
+      invoiceText,
+      /Subtotal\s+Total Invoice Amount to\s*pay \(Charges included\)\s*\n\s*([0-9,]+\.[0-9]{2})/i
+    )
+  );
+
+  const currency = extractMatch(
+    invoiceText,
+    /Subtotal\s+Total Invoice Amount to\s*pay \(Charges included\)\s*\n\s*[0-9,]+\.[0-9]{2}\s+([A-Z]{3})/i,
+    1,
+    "USD"
+  );
+
+  const total_invoice = cleanNumber(
+    extractMatch(
+      invoiceText,
+      /Subtotal\s+Total Invoice Amount to\s*pay \(Charges included\)\s*\n\s*[0-9,]+\.[0-9]{2}\s+[A-Z]{3}\s+([0-9,]+\.[0-9]{2})/i
+    )
+  );
+
+  const drop_ship_charge = cleanNumber(
+    extractMatch(invoiceText, /DROP SHIPMENT\s+([0-9,]+\.[0-9]{2})/i)
+  );
+
+  const freight_charge = cleanNumber(
+    extractMatch(invoiceText, /FREIGHT CHARGE\s+([0-9,]+\.[0-9]{2})/i)
+  );
+
+  const misc_charges = 0;
+
+  const lines = [];
+
+  const rows = invoiceText.split("\n");
+
+  let pendingOrigin = "";
+  let awaitingOriginForIndex = -1;
+
+  for (const rawRow of rows) {
+    const row = rawRow.trim();
+    if (!row) continue;
+
+    const originMatch = row.match(/^Origin\s*:\s*(.+)$/i);
+    if (originMatch) {
+      pendingOrigin = originMatch[1].trim();
+      if (awaitingOriginForIndex >= 0 && lines[awaitingOriginForIndex]) {
+        lines[awaitingOriginForIndex].origin = pendingOrigin;
+        awaitingOriginForIndex = -1;
+      }
+      continue;
+    }
+
+    const lineMatch = row.match(
+      /^(\d+)\s+([A-Z0-9]+)\s+(.+?)\s+(\d+)\s+([0-9,]+\.[0-9]{2})\s+(\d+)\s*%\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})$/i
+    );
+
+    if (lineMatch) {
+      const line = {
+        line_number: Number(lineMatch[1]),
+        line_type: "PART",
+        part_number: lineMatch[2].trim(),
+        description: lineMatch[3].trim(),
+        origin: "",
+        quantity: cleanNumber(lineMatch[4]),
+        unit_price: cleanNumber(lineMatch[5]),
+        discount_percent: cleanNumber(lineMatch[6]),
+        net_unit_price: cleanNumber(lineMatch[7]),
+        line_total: cleanNumber(lineMatch[8])
+      };
+
+      lines.push(line);
+      awaitingOriginForIndex = lines.length - 1;
+      continue;
     }
   }
 
-  if (current.length > 0) {
-    chunks.push(current.join("\n"));
+  if (drop_ship_charge > 0) {
+    lines.push({
+      line_number: lines.length + 1,
+      line_type: "DROP_SHIPMENT",
+      part_number: "",
+      description: "DROP SHIPMENT",
+      origin: "",
+      quantity: 1,
+      unit_price: drop_ship_charge,
+      discount_percent: 0,
+      net_unit_price: drop_ship_charge,
+      line_total: drop_ship_charge
+    });
   }
 
-  return chunks;
+  if (freight_charge > 0) {
+    lines.push({
+      line_number: lines.length + 1,
+      line_type: "FREIGHT",
+      part_number: "",
+      description: "FREIGHT CHARGE",
+      origin: "",
+      quantity: 1,
+      unit_price: freight_charge,
+      discount_percent: 0,
+      net_unit_price: freight_charge,
+      line_total: freight_charge
+    });
+  }
+
+  return {
+    vendor,
+    invoice_number,
+    invoice_date,
+    po_number,
+    order_number,
+    shipment_number,
+    terms,
+    currency,
+    subtotal,
+    freight_charge,
+    drop_ship_charge,
+    misc_charges,
+    total_invoice,
+    lines
+  };
 }
 
-function dedupeAndSortLines(lines) {
-  const seen = new Set();
-  const cleaned = [];
+function validateParsedInvoice(parsed) {
+  const requiredTop = [
+    "vendor",
+    "invoice_number",
+    "invoice_date",
+    "po_number",
+    "order_number",
+    "shipment_number",
+    "terms",
+    "currency"
+  ];
 
-  for (const rawLine of lines || []) {
-    const line = {
-      line_number: Number(rawLine.line_number || 0),
-      line_type: String(rawLine.line_type || "").trim(),
-      part_number: String(rawLine.part_number || "").trim(),
-      description: String(rawLine.description || "").trim(),
-      origin: String(rawLine.origin || "").trim(),
-      quantity: Number(rawLine.quantity || 0),
-      unit_price: Number(rawLine.unit_price || 0),
-      discount_percent: Number(rawLine.discount_percent || 0),
-      net_unit_price: Number(rawLine.net_unit_price || 0),
-      line_total: Number(rawLine.line_total || 0)
-    };
-
-    const key = [
-      line.line_number,
-      line.line_type,
-      line.part_number,
-      line.description,
-      line.quantity,
-      line.line_total
-    ].join("|");
-
-    if (!seen.has(key)) {
-      seen.add(key);
-      cleaned.push(line);
+  for (const key of requiredTop) {
+    if (!parsed[key]) {
+      return `Missing required field: ${key}`;
     }
   }
 
-  cleaned.sort((a, b) => {
-    if (a.line_number !== b.line_number) {
-      return a.line_number - b.line_number;
-    }
-    return a.description.localeCompare(b.description);
-  });
+  if (!Array.isArray(parsed.lines) || parsed.lines.length === 0) {
+    return "No invoice lines were parsed.";
+  }
 
-  return cleaned;
-}
-
-function sumChargesByType(lines, type) {
-  return (lines || [])
-    .filter((line) => line.line_type === type)
-    .reduce((sum, line) => sum + Number(line.line_total || 0), 0);
+  return null;
 }
 
 exports.handler = async (event) => {
-  console.log("parse-invoice started");
-
   if (event.httpMethod !== "POST") {
     return jsonResponse(405, {
       success: false,
       error: "Method not allowed. Use POST."
-    });
-  }
-
-  if (!OPENAI_API_KEY) {
-    return jsonResponse(500, {
-      success: false,
-      error: "Missing OPENAI_API_KEY environment variable."
     });
   }
 
@@ -239,14 +245,8 @@ exports.handler = async (event) => {
       });
     }
 
-    console.log("Decoded file:", {
-      filename: filename || "upload.pdf",
-      mimeType: mimeType || "application/pdf",
-      size: pdfBuffer.length
-    });
-
     const pdfData = await pdf(pdfBuffer);
-    const invoiceText = normalizeInvoiceText(pdfData.text || "");
+    const invoiceText = normalizeText(pdfData.text || "");
 
     if (!invoiceText) {
       return jsonResponse(400, {
@@ -255,153 +255,23 @@ exports.handler = async (event) => {
       });
     }
 
-    console.log("Extracted PDF text length:", invoiceText.length);
-
-    const headerSchema = {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        vendor: { type: "string" },
-        invoice_number: { type: "string" },
-        invoice_date: { type: "string" },
-        po_number: { type: "string" },
-        order_number: { type: "string" },
-        shipment_number: { type: "string" },
-        terms: { type: "string" },
-        currency: { type: "string" },
-        subtotal: { type: "number" },
-        freight_charge: { type: "number" },
-        drop_ship_charge: { type: "number" },
-        misc_charges: { type: "number" },
-        total_invoice: { type: "number" }
-      },
-      required: [
-        "vendor",
-        "invoice_number",
-        "invoice_date",
-        "po_number",
-        "order_number",
-        "shipment_number",
-        "terms",
-        "currency",
-        "subtotal",
-        "freight_charge",
-        "drop_ship_charge",
-        "misc_charges",
-        "total_invoice"
-      ]
-    };
-
-    const lineSchema = {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        lines: {
-          type: "array",
-          items: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              line_number: { type: "integer" },
-              line_type: { type: "string" },
-              part_number: { type: "string" },
-              description: { type: "string" },
-              origin: { type: "string" },
-              quantity: { type: "number" },
-              unit_price: { type: "number" },
-              discount_percent: { type: "number" },
-              net_unit_price: { type: "number" },
-              line_total: { type: "number" }
-            },
-            required: [
-              "line_number",
-              "line_type",
-              "part_number",
-              "description",
-              "origin",
-              "quantity",
-              "unit_price",
-              "discount_percent",
-              "net_unit_price",
-              "line_total"
-            ]
-          }
-        }
-      },
-      required: ["lines"]
-    };
-
-    const headerSystemPrompt =
-      "You extract invoice header fields from equipment parts invoices. " +
-      "Return only the fields requested in the JSON schema. " +
-      "Use empty strings for missing text values and 0 for missing numeric values. " +
-      "Read carefully from the invoice text. " +
-      "Freight and drop shipment should be header-level numeric charges when shown. " +
-      "Do not include line items in this step.";
-
-    const headerUserPrompt =
-      "Extract only the invoice header fields from this invoice text.\n\n" +
-      buildHeaderText(invoiceText);
-
-    console.log("Calling OpenAI for header extraction");
-
-    const headerData = await callOpenAIWithSchema({
-      systemPrompt: headerSystemPrompt,
-      userPrompt: headerUserPrompt,
-      schema: headerSchema,
-      schemaName: "invoice_header_extraction"
-    });
-
-    const lineChunks = splitLinesIntoChunks(invoiceText, 4500, 4);
-    console.log("Line chunk count:", lineChunks.length);
-
-    const lineSystemPrompt =
-      "You extract invoice line items from equipment parts invoices. " +
-      "Return only the lines visible in the provided text chunk. " +
-      "Do not invent lines. " +
-      "Include normal part lines and special charge lines like FREIGHT CHARGE and DROP SHIPMENT. " +
-      "For charge lines, set line_type to FREIGHT or DROP_SHIPMENT as appropriate, quantity to 1, unit_price to the charge amount, net_unit_price to the charge amount, and line_total to the charge amount. " +
-      "For normal rows, use line_type PART. " +
-      "Use empty strings for missing text values and 0 for missing numeric values.";
-
-    const lineResults = [];
-    for (let i = 0; i < lineChunks.length; i += 1) {
-      console.log(`Calling OpenAI for line chunk ${i + 1} of ${lineChunks.length}`);
-
-      const chunkResult = await callOpenAIWithSchema({
-        systemPrompt: lineSystemPrompt,
-        userPrompt:
-          `Extract only the invoice line items visible in this chunk.\n\n` +
-          `Chunk ${i + 1} of ${lineChunks.length}:\n\n` +
-          lineChunks[i],
-        schema: lineSchema,
-        schemaName: `invoice_lines_chunk_${i + 1}`
+    if (!/MANITOU NORTH AMERICA,\s*LLC/i.test(invoiceText)) {
+      return jsonResponse(400, {
+        success: false,
+        error: "This deterministic parser currently supports Manitou invoices only."
       });
-
-      lineResults.push(...(chunkResult.lines || []));
     }
 
-    const finalLines = dedupeAndSortLines(lineResults);
+    const extracted = parseManitouInvoice(invoiceText);
+    const validationError = validateParsedInvoice(extracted);
 
-    const freightFromLines = sumChargesByType(finalLines, "FREIGHT");
-    const dropShipFromLines = sumChargesByType(finalLines, "DROP_SHIPMENT");
-
-    const finalResult = {
-      vendor: String(headerData.vendor || ""),
-      invoice_number: String(headerData.invoice_number || ""),
-      invoice_date: String(headerData.invoice_date || ""),
-      po_number: String(headerData.po_number || ""),
-      order_number: String(headerData.order_number || ""),
-      shipment_number: String(headerData.shipment_number || ""),
-      terms: String(headerData.terms || ""),
-      currency: String(headerData.currency || ""),
-      subtotal: Number(headerData.subtotal || 0),
-      freight_charge: Number(headerData.freight_charge || freightFromLines || 0),
-      drop_ship_charge: Number(headerData.drop_ship_charge || dropShipFromLines || 0),
-      misc_charges: Number(headerData.misc_charges || 0),
-      total_invoice: Number(headerData.total_invoice || 0),
-      lines: finalLines
-    };
+    if (validationError) {
+      return jsonResponse(500, {
+        success: false,
+        error: validationError,
+        extractedTextLength: invoiceText.length
+      });
+    }
 
     return jsonResponse(200, {
       success: true,
@@ -409,12 +279,9 @@ exports.handler = async (event) => {
       mimeType: mimeType || "application/pdf",
       fileSize: pdfBuffer.length,
       extractedTextLength: invoiceText.length,
-      chunkCount: lineChunks.length,
-      extracted: finalResult
+      extracted
     });
   } catch (error) {
-    console.error("parse-invoice fatal error:", error);
-
     return jsonResponse(500, {
       success: false,
       error: error.message || "Unknown server error.",
