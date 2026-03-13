@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "dependencies": {
     "@netlify/functions": "^2.8.2",
+    "@supabase/supabase-js": "^2.99.1",
     "pdf-parse": "npm:@cedrugs/pdf-parse@^1.0.0"
   },
   "scripts": {

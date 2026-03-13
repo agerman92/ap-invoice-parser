@@ -16,7 +16,154 @@
       padding: 20px;
       border-radius: 8px;
     }
+    button {a<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AP Invoice Parser Test</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+
+    .box {
+      border: 1px solid #ccc;
+      padding: 20px;
+      border-radius: 8px;
+    }
+
     button {
+      padding: 10px 16px;
+      cursor: pointer;
+    }
+
+    pre {
+      background: #f6f6f6;
+      padding: 16px;
+      overflow: auto;
+      border-radius: 8px;
+      white-space: pre-wrap;
+    }
+
+    .muted {
+      color: #666;
+    }
+  </style>
+
+  <script>
+    window.ENV = {
+      SUPABASE_URL: "https://onllpkeixqeyfnbyonvx.supabase.co",
+      SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ubGxwa2VpeHFleWZuYnlvbnZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNzE1NDcsImV4cCI6MjA4ODk0NzU0N30.XZCX_Vta2Q0W2K5HhlkP3U1Y9eA436FVxv4o_zvfVPM"
+    };
+  </script>
+</head>
+<body>
+  <h1>AP Invoice Parser Test</h1>
+  <p class="muted">Upload a PDF invoice to Supabase Storage and create an invoice row.</p>
+
+  <div class="box">
+    <form id="uploadForm">
+      <input type="file" id="pdfFile" name="file" accept="application/pdf" required />
+      <button type="submit">Upload Invoice</button>
+    </form>
+  </div>
+
+  <h2>Result</h2>
+  <pre id="result">No file uploaded yet.</pre>
+
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+    const result = document.getElementById("result");
+    const form = document.getElementById("uploadForm");
+
+    const supabaseUrl = window.ENV?.SUPABASE_URL;
+    const supabaseAnonKey = window.ENV?.SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      result.textContent = JSON.stringify(
+        { error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY in window.ENV." },
+        null,
+        2
+      );
+      throw new Error("Missing Supabase configuration.");
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const fileInput = document.getElementById("pdfFile");
+      const file = fileInput.files[0];
+
+      if (!file) {
+        result.textContent = "Please choose a PDF.";
+        return;
+      }
+
+      result.textContent = "Uploading invoice to Supabase...";
+
+      try {
+        const timestamp = Date.now();
+        const safeName = file.name.replace(/\s+/g, "_");
+        const storagePath = `manual-tests/${timestamp}-${safeName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("ap-invoices")
+          .upload(storagePath, file, {
+            contentType: file.type || "application/pdf",
+            upsert: false
+          });
+
+        if (uploadError) {
+          throw uploadError;
+        }
+
+        const { data: invoiceRow, error: insertError } = await supabase
+          .from("ap_invoices")
+          .insert({
+            file_name: file.name,
+            storage_path: storagePath,
+            status: "uploaded"
+          })
+          .select()
+          .single();
+
+        if (insertError) {
+          throw insertError;
+        }
+
+        result.textContent = JSON.stringify(
+          {
+            success: true,
+            message: "File uploaded to Supabase Storage and invoice row created.",
+            invoiceId: invoiceRow.id,
+            fileName: file.name,
+            storagePath: storagePath
+          },
+          null,
+          2
+        );
+      } catch (err) {
+        result.textContent = JSON.stringify(
+          {
+            success: false,
+            error: err.message || "Unknown error"
+          },
+          null,
+          2
+        );
+      }
+    });
+  </script>
+</body>
+</html>
       padding: 10px 16px;
       cursor: pointer;
     }
