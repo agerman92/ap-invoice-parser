@@ -7,17 +7,6 @@ type Row = {
   items: PdfTextItem[];
 };
 
-const X = {
-  line: [0, 60],
-  part: [60, 150],
-  description: [150, 490],
-  qty: [490, 535],
-  unitPrice: [535, 590],
-  discount: [590, 645],
-  netPrice: [645, 700],
-  total: [700, 780],
-};
-
 function cleanText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -29,8 +18,18 @@ function toNumber(value: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function sameRow(a: PdfTextItem, b: PdfTextItem): boolean {
-  return a.page === b.page && Math.abs(a.y - b.y) <= 3;
+function firstMatch(text: string, regex: RegExp): string {
+  const match = text.match(regex);
+  return match?.[1]?.trim() ?? "";
+}
+
+function detectManitou(layout: PdfLayoutResult): boolean {
+  const text = layout.plainText.toUpperCase();
+  return (
+    text.includes("MANITOU NORTH AMERICA") &&
+    text.includes("UNIT PRICE") &&
+    text.includes("PRICE TOTAL")
+  );
 }
 
 function groupRows(items: PdfTextItem[]): Row[] {
@@ -43,16 +42,20 @@ function groupRows(items: PdfTextItem[]): Row[] {
   const rows: Row[] = [];
 
   for (const item of sorted) {
-    const existing = rows.find((r) => sameRow(item, { ...item, y: r.y } as PdfTextItem) && r.page === item.page);
-    if (existing) {
-      existing.items.push(item);
-    } else {
-      rows.push({
+    let matched = rows.find(
+      (r) => r.page === item.page && Math.abs(r.y - item.y) <= 3,
+    );
+
+    if (!matched) {
+      matched = {
         page: item.page,
         y: item.y,
-        items: [item],
-      });
+        items: [],
+      };
+      rows.push(matched);
     }
+
+    matched.items.push(item);
   }
 
   for (const row of rows) {
@@ -62,27 +65,27 @@ function groupRows(items: PdfTextItem[]): Row[] {
   return rows;
 }
 
-function textInRange(row: Row, minX: number, maxX: number): string {
-  return cleanText(
-    row.items
-      .filter((i) => i.x >= minX && i.x < maxX)
-      .map((i) => i.text)
-      .join(" ")
-  );
+function rowText(row: Row): string {
+  return cleanText(row.items.map((i) => i.text).join(" "));
 }
 
-function firstMatch(text: string, regex: RegExp): string {
-  const match = text.match(regex);
-  return match?.[1]?.trim() ?? "";
-}
-
-function detectManitou(layout: PdfLayoutResult): boolean {
-  const text = layout.plainText.toUpperCase();
+function isNoiseRow(text: string): boolean {
+  const t = text.toUpperCase();
   return (
-    text.includes("MANITOU NORTH AMERICA") &&
-    text.includes("SALES") &&
-    text.includes("UNIT PRICE") &&
-    text.includes("PRICE TOTAL")
+    !t ||
+    t.includes("MANITOU NORTH AMERICA") ||
+    t.includes("INVOICE") ||
+    t.includes("ORIGINAL") ||
+    t.includes("LINE PART NUMBER DESCRIPTION") ||
+    t.includes("SALES QTY") ||
+    t.includes("UNIT PRICE") ||
+    t.includes("NET PRICE") ||
+    t.includes("PRICE TOTAL") ||
+    t.includes("ALL CLAIMS AGAINST THIS INVOICE") ||
+    t.includes("REMIT PAYMENT TO") ||
+    t.includes("TERMS OF PAYMENT") ||
+    t.includes("SHIP VIA") ||
+    t.includes("FORWARD AGENT")
   );
 }
 
@@ -96,10 +99,12 @@ function extractHeader(layout: PdfLayoutResult): Partial<InvoiceExtraction> {
   const poNumber = firstMatch(text, /PO Number\s*:\s*([A-Z0-9-]+)/i);
   const terms = firstMatch(text, /Terms of payment\s*:\s*([A-Za-z0-9 ]+)/i);
 
-  // Page 3 totals
-  const subtotalMatch = text.match(/Subtotal\s+Total Invoice Amount to\s+pay.*?\n?([0-9,]+\.[0-9]{2})\s+USD\s+([0-9,]+\.[0-9]{2})/is);
-  const subtotal = subtotalMatch ? toNumber(subtotalMatch[1]) : 0;
-  const totalInvoice = subtotalMatch ? toNumber(subtotalMatch[2]) : 0;
+  const totals = text.match(
+    /Subtotal\s+Total Invoice Amount to\s+pay.*?([0-9,]+\.[0-9]{2})\s+USD\s+([0-9,]+\.[0-9]{2})/is,
+  );
+
+  const subtotal = totals ? toNumber(totals[1]) : 0;
+  const totalInvoice = totals ? toNumber(totals[2]) : 0;
 
   return {
     vendor: "MANITOU NORTH AMERICA, LLC",
@@ -115,29 +120,11 @@ function extractHeader(layout: PdfLayoutResult): Partial<InvoiceExtraction> {
   };
 }
 
-function isHeaderOrNoise(rowText: string): boolean {
-  const t = rowText.toUpperCase();
-  return (
-    !t ||
-    t.includes("MANITOU NORTH AMERICA") ||
-    t.includes("INVOICE") ||
-    t.includes("ORIGINAL") ||
-    t.includes("LINE PART NUMBER DESCRIPTION") ||
-    t.includes("SALES QTY") ||
-    t.includes("UNIT PRICE") ||
-    t.includes("NET PRICE") ||
-    t.includes("PRICE TOTAL") ||
-    t.includes("ORDER NUMBER") ||
-    t.includes("PO NUMBER") ||
-    t.includes("ALL CLAIMS AGAINST THIS INVOICE") ||
-    t.includes("REMIT PAYMENT TO")
-  );
-}
+function parseSpecialCharge(text: string): InvoiceLine | null {
+  const upper = text.toUpperCase();
 
-function parseSpecialCharge(rowText: string, nextNumberCandidate = ""): InvoiceLine | null {
-  const upper = rowText.toUpperCase();
-  if (upper.includes("DROP SHIPMENT")) {
-    const amount = toNumber(nextNumberCandidate || upper.replace(/.*DROP SHIPMENT/i, "").trim());
+  if (upper.startsWith("DROP SHIPMENT")) {
+    const amount = toNumber(upper.replace("DROP SHIPMENT", "").trim());
     return {
       line_number: 9001,
       line_type: "DROP_SHIPMENT",
@@ -152,8 +139,8 @@ function parseSpecialCharge(rowText: string, nextNumberCandidate = ""): InvoiceL
     };
   }
 
-  if (upper.includes("FREIGHT CHARGE")) {
-    const amount = toNumber(nextNumberCandidate || upper.replace(/.*FREIGHT CHARGE/i, "").trim());
+  if (upper.startsWith("FREIGHT CHARGE")) {
+    const amount = toNumber(upper.replace("FREIGHT CHARGE", "").trim());
     return {
       line_number: 9002,
       line_type: "FREIGHT",
@@ -171,13 +158,68 @@ function parseSpecialCharge(rowText: string, nextNumberCandidate = ""): InvoiceL
   return null;
 }
 
+/**
+ * Parse a true item row by reading the stable numeric tokens from right to left.
+ *
+ * Example:
+ * 1 L500804 SEAL RING 2 41.62 24 % 31.63 63.26
+ *
+ * tokens become:
+ * [1, L500804, SEAL, RING, 2, 41.62, 24, %, 31.63, 63.26]
+ */
+function parseItemRow(text: string): InvoiceLine | null {
+  const tokens = cleanText(text).split(" ");
+  if (tokens.length < 9) return null;
+
+  const lineNumber = Math.trunc(toNumber(tokens[0]));
+  const partNumber = tokens[1] || "";
+
+  if (!lineNumber || !partNumber) return null;
+
+  const lineTotal = toNumber(tokens[tokens.length - 1]);
+  const netUnitPrice = toNumber(tokens[tokens.length - 2]);
+
+  let discountPercent = 0;
+  let unitPrice = 0;
+  let quantity = 0;
+  let descEndIndex = tokens.length - 2;
+
+  // Handle "... 24 % 31.63 63.26"
+  if (tokens[tokens.length - 3] === "%") {
+    discountPercent = toNumber(tokens[tokens.length - 4]);
+    unitPrice = toNumber(tokens[tokens.length - 5]);
+    quantity = toNumber(tokens[tokens.length - 6]);
+    descEndIndex = tokens.length - 6;
+  } else {
+    // fallback if % sign not broken out
+    discountPercent = toNumber(tokens[tokens.length - 3].replace("%", ""));
+    unitPrice = toNumber(tokens[tokens.length - 4]);
+    quantity = toNumber(tokens[tokens.length - 5]);
+    descEndIndex = tokens.length - 5;
+  }
+
+  const description = cleanText(tokens.slice(2, descEndIndex).join(" "));
+
+  return {
+    line_number: lineNumber,
+    line_type: "PART",
+    part_number: partNumber,
+    description,
+    origin: "",
+    quantity,
+    unit_price: unitPrice,
+    discount_percent: discountPercent,
+    net_unit_price: netUnitPrice,
+    line_total: lineTotal,
+  };
+}
+
 function parseLines(layout: PdfLayoutResult): {
   lines: InvoiceLine[];
   freightCharge: number;
   dropShipCharge: number;
 } {
-  const page12Items = layout.items.filter((i) => i.page <= 2);
-  const rows = groupRows(page12Items);
+  const rows = groupRows(layout.items.filter((i) => i.page <= 2));
 
   const lines: InvoiceLine[] = [];
   let currentLine: InvoiceLine | null = null;
@@ -185,68 +227,29 @@ function parseLines(layout: PdfLayoutResult): {
   let dropShipCharge = 0;
 
   for (const row of rows) {
-    const rowText = cleanText(row.items.map((i) => i.text).join(" "));
-    if (isHeaderOrNoise(rowText)) continue;
+    const text = rowText(row);
+    if (isNoiseRow(text)) continue;
 
-    // Continuation origin row
-    const originMatch = rowText.match(/^Origin\s*:\s*([A-Z]{2})$/i);
+    const originMatch = text.match(/^Origin\s*:\s*([A-Z]{2})$/i);
     if (originMatch && currentLine) {
       currentLine.origin = originMatch[1].toUpperCase();
       continue;
     }
 
-    // Special charges at page bottom
-    if (rowText.toUpperCase().startsWith("DROP SHIPMENT")) {
-      const amount = toNumber(textInRange(row, X.total[0], X.total[1]) || rowText.replace(/DROP SHIPMENT/i, ""));
-      const charge = parseSpecialCharge("DROP SHIPMENT", String(amount));
-      if (charge) {
-        dropShipCharge = charge.line_total;
-        lines.push(charge);
-      }
+    const special = parseSpecialCharge(text);
+    if (special) {
+      lines.push(special);
+      if (special.line_type === "FREIGHT") freightCharge = special.line_total;
+      if (special.line_type === "DROP_SHIPMENT") dropShipCharge = special.line_total;
       currentLine = null;
       continue;
     }
 
-    if (rowText.toUpperCase().startsWith("FREIGHT CHARGE")) {
-      const amount = toNumber(textInRange(row, X.total[0], X.total[1]) || rowText.replace(/FREIGHT CHARGE/i, ""));
-      const charge = parseSpecialCharge("FREIGHT CHARGE", String(amount));
-      if (charge) {
-        freightCharge = charge.line_total;
-        lines.push(charge);
-      }
-      currentLine = null;
-      continue;
+    const parsed = parseItemRow(text);
+    if (parsed) {
+      lines.push(parsed);
+      currentLine = parsed;
     }
-
-    const lineNumberText = textInRange(row, X.line[0], X.line[1]);
-    const partNumber = textInRange(row, X.part[0], X.part[1]);
-    const description = textInRange(row, X.description[0], X.description[1]);
-    const qtyText = textInRange(row, X.qty[0], X.qty[1]);
-    const unitPriceText = textInRange(row, X.unitPrice[0], X.unitPrice[1]);
-    const discountText = textInRange(row, X.discount[0], X.discount[1]).replace("%", "");
-    const netPriceText = textInRange(row, X.netPrice[0], X.netPrice[1]);
-    const totalText = textInRange(row, X.total[0], X.total[1]);
-
-    const lineNumber = Math.trunc(toNumber(lineNumberText));
-
-    // Ignore rows that are not real line rows
-    if (!lineNumber || !partNumber) continue;
-
-    const line: InvoiceLine = {
-      line_number: lineNumber,
-      line_type: "PART",
-      part_number: partNumber,
-      description,
-      origin: "",
-      quantity: toNumber(qtyText),
-      unit_price: toNumber(unitPriceText),
-      discount_percent: toNumber(discountText),
-      net_unit_price: toNumber(netPriceText),
-      line_total: toNumber(totalText),
-    };
-
-    lines.push(line);
-    currentLine = line;
   }
 
   return { lines, freightCharge, dropShipCharge };
