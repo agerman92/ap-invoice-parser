@@ -63,7 +63,23 @@ function dedupeLines(lines) {
 function parseManitouPartLines(invoiceText) {
   const lines = [];
 
-  // Pattern 1: spaced row layout (common on larger invoices)
+  function inferQuantity(netUnitPrice, lineTotal, fallback = 1) {
+    const net = cleanNumber(netUnitPrice);
+    const total = cleanNumber(lineTotal);
+
+    if (!net || !total) return fallback;
+
+    const qty = total / net;
+    const rounded = Math.round(qty);
+
+    if (Math.abs(qty - rounded) < 0.02 && rounded > 0) {
+      return rounded;
+    }
+
+    return fallback;
+  }
+
+  // Standard spaced layout
   const spacedPattern =
     /(?:^|\n)\s*(\d+)\s+([A-Z0-9]+)\s+(.+?)\s+(\d+)\s+([0-9,]+\.[0-9]{2})\s+(\d+)\s*%\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})\s*\n\s*Origin\s*:\s*([A-Z]{2,})/gms;
 
@@ -83,27 +99,33 @@ function parseManitouPartLines(invoiceText) {
     });
   }
 
-  // Pattern 2: compact multi-line layout from pdf-parse
-  // Example:
+  // Compact pdf-parse layout where qty may collapse out of the text stream.
+  // Example from your preview:
   // 1
   // 210722
   // CAP/ VENTED FUEL172.9824 %55.4655.46
   // Origin :US
   const compactPattern =
-    /(?:^|\n)\s*(\d+)\s*\n\s*([A-Z0-9]+)\s*\n\s*(.+?)(\d+)([0-9,]+\.[0-9]{2})(\d+)\s*%([0-9,]+\.[0-9]{2})([0-9,]+\.[0-9]{2})\s*\n\s*Origin\s*:\s*([A-Z]{2,})/gms;
+    /(?:^|\n)\s*(\d+)\s*\n\s*([A-Z0-9]+)\s*\n\s*(.+?)([0-9,]+\.[0-9]{2})(\d+)\s*%([0-9,]+\.[0-9]{2})([0-9,]+\.[0-9]{2})\s*\n\s*Origin\s*:\s*([A-Z]{2,})/gms;
 
   while ((match = compactPattern.exec(invoiceText)) !== null) {
+    const description = compactSpaces(match[3]);
+    const unitPrice = cleanNumber(match[4]);
+    const discountPercent = cleanNumber(match[5]);
+    const netUnitPrice = cleanNumber(match[6]);
+    const lineTotal = cleanNumber(match[7]);
+
     lines.push({
       line_number: Number(match[1]),
       line_type: "PART",
       part_number: compactSpaces(match[2]),
-      description: compactSpaces(match[3]),
-      origin: compactSpaces(match[9]),
-      quantity: cleanNumber(match[4]),
-      unit_price: cleanNumber(match[5]),
-      discount_percent: cleanNumber(match[6]),
-      net_unit_price: cleanNumber(match[7]),
-      line_total: cleanNumber(match[8])
+      description,
+      origin: compactSpaces(match[8]),
+      quantity: inferQuantity(netUnitPrice, lineTotal, 1),
+      unit_price: unitPrice,
+      discount_percent: discountPercent,
+      net_unit_price: netUnitPrice,
+      line_total: lineTotal
     });
   }
 
