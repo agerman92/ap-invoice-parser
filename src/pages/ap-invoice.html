@@ -25,9 +25,49 @@
       margin-bottom: 12px;
     }
 
+    .top-nav-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+
     .status-bar {
       margin: 12px 0;
       font-weight: bold;
+    }
+
+    .invoice-nav {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .invoice-nav button {
+      padding: 8px 12px;
+    }
+
+    .summary-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 10px 0 0 0;
+    }
+
+    .summary-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: bold;
+      background: #eef3f8;
+      color: #24415c;
+      border: 1px solid #cfdceb;
     }
 
     .actions {
@@ -35,6 +75,12 @@
       gap: 10px;
       margin: 16px 0 20px 0;
       flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      background: #fafafa;
+      z-index: 20;
+      padding: 10px 0 12px 0;
+      border-bottom: 1px solid #ddd;
     }
 
     button {
@@ -60,7 +106,7 @@
 
     .pdf-panel {
       position: sticky;
-      top: 16px;
+      top: 78px;
       align-self: start;
     }
 
@@ -129,7 +175,8 @@
 
     .warnings,
     .workflow-box,
-    .exception-box {
+    .exception-box,
+    .financial-box {
       background: #fff7e6;
       border: 1px solid #f0d58c;
       padding: 12px;
@@ -145,6 +192,47 @@
     .exception-box {
       background: #fff0f1;
       border-color: #f3c2c7;
+    }
+
+    .financial-box {
+      background: #f5fbf7;
+      border-color: #b8e0c4;
+    }
+
+    .financial-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(240px, 1fr));
+      gap: 12px 16px;
+    }
+
+    .financial-card {
+      border: 1px solid #d8e9de;
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+    }
+
+    .financial-title {
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+
+    .financial-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 6px 0;
+      font-size: 14px;
+    }
+
+    .financial-ok {
+      color: #17663a;
+      font-weight: bold;
+    }
+
+    .financial-warn {
+      color: #9b1c1c;
+      font-weight: bold;
     }
 
     .small-note {
@@ -178,6 +266,10 @@
       box-sizing: border-box;
       padding: 6px;
       font-size: 13px;
+    }
+
+    .line-duplicate td {
+      background: #fff6dd;
     }
 
     .debug-panel {
@@ -334,12 +426,17 @@
         position: static;
       }
 
+      .actions {
+        position: static;
+      }
+
       .pdf-frame-wrap {
         height: 500px;
       }
 
       .debug-grid,
-      .header-grid {
+      .header-grid,
+      .financial-grid {
         grid-template-columns: 1fr;
       }
     }
@@ -347,9 +444,22 @@
 </head>
 <body>
   <div class="top-bar">
-    <p><a href="./ap-review.html">← Back to AP Review</a></p>
+    <div class="top-nav-row">
+      <p><a href="./ap-review.html">← Back to AP Review</a></p>
+      <div class="invoice-nav">
+        <button id="prevInvoiceButton" type="button">← Previous</button>
+        <button id="nextInvoiceButton" type="button">Next →</button>
+      </div>
+    </div>
+
     <h1>Invoice Detail</h1>
     <div id="statusMessage" class="status-bar">Loading invoice...</div>
+
+    <div id="invoiceSummaryBar" class="summary-bar">
+      <span class="summary-pill">Vendor: —</span>
+      <span class="summary-pill">Parser: —</span>
+      <span class="summary-pill">Priority: —</span>
+    </div>
   </div>
 
   <div class="actions">
@@ -358,6 +468,7 @@
     <button id="holdButton" type="button">Put On Hold</button>
     <button id="rejectButton" type="button">Reject Invoice</button>
     <button id="duplicateButton" type="button">Mark Duplicate</button>
+    <button id="rerunParserButton" type="button">Re-Run Parser</button>
     <button id="reloadPdfButton" type="button">Reload PDF</button>
   </div>
 
@@ -388,6 +499,9 @@
       <h2>Warnings</h2>
       <div id="invoiceWarnings" class="warnings"></div>
 
+      <h2>Financial Checks</h2>
+      <div id="financialChecks" class="financial-box"></div>
+
       <h2>Review Workflow</h2>
       <div class="workflow-box">
         <div class="workflow-grid">
@@ -408,7 +522,7 @@
 
       <h2>Invoice Lines</h2>
       <p class="small-note">
-        You can edit any line and save changes. Low-confidence fields are highlighted.
+        You can edit any line and save changes. Low-confidence fields are highlighted. Duplicate part numbers are highlighted in yellow.
       </p>
 
       <div class="lines-section">
@@ -466,6 +580,16 @@
           <div class="debug-card">
             <div class="debug-label">Completed At</div>
             <div id="debugCompletedAt" class="debug-value"></div>
+          </div>
+
+          <div class="debug-card">
+            <div class="debug-label">Processing Time</div>
+            <div id="debugProcessingTime" class="debug-value"></div>
+          </div>
+
+          <div class="debug-card">
+            <div class="debug-label">Vendor Match Method</div>
+            <div id="debugVendorMatchMethod" class="debug-value"></div>
           </div>
 
           <div class="debug-card debug-full">

@@ -4,12 +4,17 @@ const statusMessage = document.getElementById("statusMessage");
 const invoiceHeaderForm = document.getElementById("invoiceHeaderForm");
 const invoiceWarnings = document.getElementById("invoiceWarnings");
 const invoiceExceptions = document.getElementById("invoiceExceptions");
+const financialChecks = document.getElementById("financialChecks");
+const invoiceSummaryBar = document.getElementById("invoiceSummaryBar");
 const lineTableBody = document.getElementById("lineTableBody");
 const saveButton = document.getElementById("saveButton");
 const approveButton = document.getElementById("approveButton");
 const holdButton = document.getElementById("holdButton");
 const rejectButton = document.getElementById("rejectButton");
 const duplicateButton = document.getElementById("duplicateButton");
+const rerunParserButton = document.getElementById("rerunParserButton");
+const prevInvoiceButton = document.getElementById("prevInvoiceButton");
+const nextInvoiceButton = document.getElementById("nextInvoiceButton");
 const reloadPdfButton = document.getElementById("reloadPdfButton");
 const reloadDebugButton = document.getElementById("reloadDebugButton");
 const pdfFrame = document.getElementById("pdfFrame");
@@ -25,6 +30,8 @@ const debugExtractionStatus = document.getElementById("debugExtractionStatus");
 const debugModel = document.getElementById("debugModel");
 const debugStartedAt = document.getElementById("debugStartedAt");
 const debugCompletedAt = document.getElementById("debugCompletedAt");
+const debugProcessingTime = document.getElementById("debugProcessingTime");
+const debugVendorMatchMethod = document.getElementById("debugVendorMatchMethod");
 const debugErrorMessage = document.getElementById("debugErrorMessage");
 const debugWarnings = document.getElementById("debugWarnings");
 const debugStructuredJson = document.getElementById("debugStructuredJson");
@@ -34,6 +41,7 @@ let currentInvoice = null;
 let currentLines = [];
 let currentUser = null;
 let latestExtraction = null;
+let invoiceNavigationList = [];
 
 async function initPage() {
   try {
@@ -43,24 +51,81 @@ async function initPage() {
     }
     currentUser = userData?.user || null;
 
-    await loadInvoiceDetail();
-
     saveButton.addEventListener("click", saveChanges);
     approveButton.addEventListener("click", approveInvoice);
     holdButton.addEventListener("click", putInvoiceOnHold);
     rejectButton.addEventListener("click", rejectInvoice);
     duplicateButton.addEventListener("click", markDuplicate);
+    rerunParserButton.addEventListener("click", rerunParser);
+    prevInvoiceButton.addEventListener("click", goToPreviousInvoice);
+    nextInvoiceButton.addEventListener("click", goToNextInvoice);
     reloadPdfButton.addEventListener("click", reloadPdf);
     reloadDebugButton.addEventListener("click", reloadDebugPanel);
+    invoiceHeaderForm.addEventListener("input", renderFinancialChecks);
+    lineTableBody.addEventListener("input", renderFinancialChecks);
+
+    await loadInvoiceNavigation();
+    await loadInvoiceDetail();
   } catch (error) {
     console.error(error);
     statusMessage.textContent = `Error initializing page: ${error.message}`;
   }
 }
 
-async function loadInvoiceDetail() {
+async function loadInvoiceNavigation() {
+  const { data, error } = await supabase
+    .from("ap_invoices")
+    .select("id")
+    .order("review_priority", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (error) {
+    console.warn("Could not load invoice navigation:", error);
+    invoiceNavigationList = [];
+    return;
+  }
+
+  invoiceNavigationList = data || [];
+}
+
+function getCurrentInvoiceId() {
   const params = new URLSearchParams(window.location.search);
-  const invoiceId = params.get("id");
+  return params.get("id");
+}
+
+function goToInvoiceByIndex(index) {
+  if (index < 0 || index >= invoiceNavigationList.length) return;
+  const targetId = invoiceNavigationList[index]?.id;
+  if (!targetId) return;
+  window.location.href = `./ap-invoice.html?id=${targetId}`;
+}
+
+function goToPreviousInvoice() {
+  const currentId = getCurrentInvoiceId();
+  const idx = invoiceNavigationList.findIndex((item) => item.id === currentId);
+  if (idx > 0) {
+    goToInvoiceByIndex(idx - 1);
+  }
+}
+
+function goToNextInvoice() {
+  const currentId = getCurrentInvoiceId();
+  const idx = invoiceNavigationList.findIndex((item) => item.id === currentId);
+  if (idx >= 0 && idx < invoiceNavigationList.length - 1) {
+    goToInvoiceByIndex(idx + 1);
+  }
+}
+
+function updateNavigationButtons() {
+  const currentId = getCurrentInvoiceId();
+  const idx = invoiceNavigationList.findIndex((item) => item.id === currentId);
+  prevInvoiceButton.disabled = idx <= 0;
+  nextInvoiceButton.disabled = idx < 0 || idx >= invoiceNavigationList.length - 1;
+}
+
+async function loadInvoiceDetail() {
+  const invoiceId = getCurrentInvoiceId();
 
   if (!invoiceId) {
     statusMessage.textContent = "Missing invoice ID.";
@@ -104,6 +169,9 @@ async function loadInvoiceDetail() {
 
   renderInvoiceHeaderForm(invoice);
   renderLines(currentLines);
+  renderInvoiceSummaryBar();
+  renderFinancialChecks();
+  updateNavigationButtons();
 
   statusMessage.textContent = "Invoice loaded.";
 }
@@ -199,6 +267,8 @@ async function reloadDebugPanel() {
   await loadLatestExtraction(currentInvoice.id, currentInvoice.invoice_number);
   renderInvoiceHeaderForm(currentInvoice);
   renderLines(currentLines);
+  renderInvoiceSummaryBar();
+  renderFinancialChecks();
   statusMessage.textContent = "Debug panel refreshed.";
 }
 
@@ -206,6 +276,20 @@ function renderWorkflowValues(invoice) {
   apNotes.value = invoice.ap_notes || "";
   holdReason.value = invoice.hold_reason || "";
   rejectionReason.value = invoice.rejection_reason || "";
+}
+
+function renderInvoiceSummaryBar() {
+  const vendor = currentInvoice?.vendor || "Unknown Vendor";
+  const parser = latestExtraction?.parser_version || "Unknown Parser";
+  const priority = Number(currentInvoice?.review_priority || 0);
+  const vendorMatchMethod = currentInvoice?.vendor_match_method || "n/a";
+
+  invoiceSummaryBar.innerHTML = `
+    <span class="summary-pill">Vendor: ${escapeHtml(vendor)}</span>
+    <span class="summary-pill">Parser: ${escapeHtml(parser)}</span>
+    <span class="summary-pill">Priority: ${priority}</span>
+    <span class="summary-pill">Vendor Match: ${escapeHtml(vendorMatchMethod)}</span>
+  `;
 }
 
 function renderInvoiceHeaderForm(invoice) {
@@ -312,6 +396,23 @@ function renderExceptions(flags, priority) {
   `;
 }
 
+function getDuplicatePartNumbers(lines) {
+  const counts = new Map();
+
+  for (const line of lines) {
+    const key = String(line.part_number || "").trim().toUpperCase();
+    if (!key || key === "NULL") continue;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  const duplicates = new Set();
+  for (const [key, count] of counts.entries()) {
+    if (count > 1) duplicates.add(key);
+  }
+
+  return duplicates;
+}
+
 function renderLines(lines) {
   if (!lines.length) {
     lineTableBody.innerHTML = `
@@ -322,27 +423,74 @@ function renderLines(lines) {
     return;
   }
 
-  lineTableBody.innerHTML = lines.map((line, index) => `
-    <tr data-line-index="${index}">
-      <td><input class="line-input ${lineConfidenceClass(line.line_number, "line_number")}" data-field="line_number" type="number" value="${line.line_number ?? index + 1}" /></td>
-      <td>
-        <select class="line-input ${lineConfidenceClass(line.line_number, "line_type")}" data-field="line_type">
-          <option value="PART" ${line.line_type === "PART" ? "selected" : ""}>PART</option>
-          <option value="FREIGHT" ${line.line_type === "FREIGHT" ? "selected" : ""}>FREIGHT</option>
-          <option value="DROP_SHIPMENT" ${line.line_type === "DROP_SHIPMENT" ? "selected" : ""}>DROP_SHIPMENT</option>
-          <option value="MISC" ${line.line_type === "MISC" ? "selected" : ""}>MISC</option>
-        </select>
-      </td>
-      <td><input class="line-input ${lineConfidenceClass(line.line_number, "part_number")}" data-field="part_number" type="text" value="${escapeAttribute(line.part_number || "")}" /></td>
-      <td><input class="line-input ${lineConfidenceClass(line.line_number, "description")}" data-field="description" type="text" value="${escapeAttribute(line.description || "")}" /></td>
-      <td><input class="line-input ${lineConfidenceClass(line.line_number, "origin")}" data-field="origin" type="text" value="${escapeAttribute(line.origin || "")}" /></td>
-      <td><input class="line-input ${lineConfidenceClass(line.line_number, "quantity")}" data-field="quantity" type="number" step="0.01" value="${line.quantity ?? 0}" /></td>
-      <td><input class="line-input ${lineConfidenceClass(line.line_number, "unit_price")}" data-field="unit_price" type="number" step="0.01" value="${line.unit_price ?? 0}" /></td>
-      <td><input class="line-input ${lineConfidenceClass(line.line_number, "discount_percent")}" data-field="discount_percent" type="number" step="0.01" value="${line.discount_percent ?? 0}" /></td>
-      <td><input class="line-input ${lineConfidenceClass(line.line_number, "net_unit_price")}" data-field="net_unit_price" type="number" step="0.01" value="${line.net_unit_price ?? 0}" /></td>
-      <td><input class="line-input ${lineConfidenceClass(line.line_number, "line_total")}" data-field="line_total" type="number" step="0.01" value="${line.line_total ?? 0}" /></td>
-    </tr>
-  `).join("");
+  const duplicateParts = getDuplicatePartNumbers(lines);
+
+  lineTableBody.innerHTML = lines.map((line, index) => {
+    const duplicateKey = String(line.part_number || "").trim().toUpperCase();
+    const duplicateClass = duplicateParts.has(duplicateKey) ? "line-duplicate" : "";
+
+    return `
+      <tr data-line-index="${index}" class="${duplicateClass}">
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "line_number")}" data-field="line_number" type="number" value="${line.line_number ?? index + 1}" /></td>
+        <td>
+          <select class="line-input ${lineConfidenceClass(line.line_number, "line_type")}" data-field="line_type">
+            <option value="PART" ${line.line_type === "PART" ? "selected" : ""}>PART</option>
+            <option value="FREIGHT" ${line.line_type === "FREIGHT" ? "selected" : ""}>FREIGHT</option>
+            <option value="DROP_SHIPMENT" ${line.line_type === "DROP_SHIPMENT" ? "selected" : ""}>DROP_SHIPMENT</option>
+            <option value="MISC" ${line.line_type === "MISC" ? "selected" : ""}>MISC</option>
+          </select>
+        </td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "part_number")}" data-field="part_number" type="text" value="${escapeAttribute(line.part_number || "")}" /></td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "description")}" data-field="description" type="text" value="${escapeAttribute(line.description || "")}" /></td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "origin")}" data-field="origin" type="text" value="${escapeAttribute(line.origin || "")}" /></td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "quantity")}" data-field="quantity" type="number" step="0.01" value="${line.quantity ?? 0}" /></td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "unit_price")}" data-field="unit_price" type="number" step="0.01" value="${line.unit_price ?? 0}" /></td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "discount_percent")}" data-field="discount_percent" type="number" step="0.01" value="${line.discount_percent ?? 0}" /></td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "net_unit_price")}" data-field="net_unit_price" type="number" step="0.01" value="${line.net_unit_price ?? 0}" /></td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "line_total")}" data-field="line_total" type="number" step="0.01" value="${line.line_total ?? 0}" /></td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderFinancialChecks() {
+  const subtotal = getNumericValue("subtotal");
+  const freight = getNumericValue("freight_charge");
+  const dropShip = getNumericValue("drop_ship_charge");
+  const misc = getNumericValue("misc_charges");
+  const totalInvoice = getNumericValue("total_invoice");
+
+  const expectedHeaderTotal = subtotal + freight + dropShip + misc;
+  const headerDifference = roundCurrency(totalInvoice - expectedHeaderTotal);
+
+  const editedLines = getEditedLines();
+  const lineSubtotal = roundCurrency(
+    editedLines.reduce((sum, line) => sum + Number(line.line_total || 0), 0)
+  );
+  const lineDifference = roundCurrency(totalInvoice - lineSubtotal);
+
+  const headerStatusClass = Math.abs(headerDifference) <= 0.05 ? "financial-ok" : "financial-warn";
+  const lineStatusClass = Math.abs(lineDifference) <= 0.05 ? "financial-ok" : "financial-warn";
+
+  financialChecks.innerHTML = `
+    <div class="financial-grid">
+      <div class="financial-card">
+        <div class="financial-title">Header Total Validation</div>
+        <div class="financial-row"><span>Subtotal + charges</span><span>${formatCurrency(expectedHeaderTotal)}</span></div>
+        <div class="financial-row"><span>Invoice total</span><span>${formatCurrency(totalInvoice)}</span></div>
+        <div class="financial-row"><span>Difference</span><span class="${headerStatusClass}">${formatCurrency(headerDifference)}</span></div>
+        <div class="financial-row"><span>Status</span><span class="${headerStatusClass}">${Math.abs(headerDifference) <= 0.05 ? "Totals match" : "Totals mismatch"}</span></div>
+      </div>
+
+      <div class="financial-card">
+        <div class="financial-title">Line Total Preview</div>
+        <div class="financial-row"><span>Sum of line totals</span><span>${formatCurrency(lineSubtotal)}</span></div>
+        <div class="financial-row"><span>Invoice total</span><span>${formatCurrency(totalInvoice)}</span></div>
+        <div class="financial-row"><span>Difference</span><span class="${lineStatusClass}">${formatCurrency(lineDifference)}</span></div>
+        <div class="financial-row"><span>Status</span><span class="${lineStatusClass}">${Math.abs(lineDifference) <= 0.05 ? "Lines match invoice" : "Lines differ from invoice"}</span></div>
+      </div>
+    </div>
+  `;
 }
 
 function renderDebugPanel(extraction) {
@@ -357,6 +505,8 @@ function renderDebugPanel(extraction) {
   debugModel.textContent = extraction.model || "";
   debugStartedAt.textContent = formatDateTime(extraction.started_at);
   debugCompletedAt.textContent = formatDateTime(extraction.completed_at);
+  debugProcessingTime.textContent = calculateProcessingTime(extraction.started_at, extraction.completed_at);
+  debugVendorMatchMethod.textContent = currentInvoice?.vendor_match_method || "n/a";
   debugErrorMessage.textContent = extraction.error_message || "None";
 
   const storedWarnings = Array.isArray(extraction.warnings) ? extraction.warnings : [];
@@ -387,10 +537,20 @@ function renderDebugFallback(message) {
   debugModel.textContent = "";
   debugStartedAt.textContent = "";
   debugCompletedAt.textContent = "";
+  debugProcessingTime.textContent = "";
+  debugVendorMatchMethod.textContent = "";
   debugErrorMessage.textContent = message;
   debugWarnings.innerHTML = "<p>No stored warnings.</p>";
   debugStructuredJson.textContent = "";
   debugRawText.textContent = "";
+}
+
+function calculateProcessingTime(startedAt, completedAt) {
+  if (!startedAt || !completedAt) return "N/A";
+  const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "N/A";
+  if (ms < 1000) return `${ms} ms`;
+  return `${(ms / 1000).toFixed(2)} sec`;
 }
 
 function getHeaderValues() {
@@ -637,6 +797,37 @@ async function markDuplicate() {
   }
 }
 
+async function rerunParser() {
+  if (!currentInvoice?.id) return;
+
+  try {
+    setBusyState(true, "Re-queueing invoice for parsing...");
+
+    const { data, error } = await supabase.functions.invoke("enqueue-invoice", {
+      body: { invoiceId: currentInvoice.id }
+    });
+
+    if (error) throw error;
+
+    await supabase
+      .from("ap_invoice_review_events")
+      .insert([{
+        invoice_id: currentInvoice.id,
+        field_name: "status",
+        old_value: currentInvoice.status,
+        new_value: "queued",
+        changed_by: currentUser?.id || null,
+        change_reason: "Invoice manually re-queued for parsing"
+      }]);
+
+    await loadInvoiceDetail();
+    setBusyState(false, `Invoice re-queued successfully. ${data?.jobId ? `Job ID: ${data.jobId}` : ""}`);
+  } catch (error) {
+    console.error("Re-run parser failed:", error);
+    setBusyState(false, `Re-run parser failed: ${error.message}`);
+  }
+}
+
 function buildHeaderAuditEvents(original, edited) {
   const fields = [
     "vendor",
@@ -765,15 +956,30 @@ function getRowNumberValue(row, field) {
   return Number.isFinite(value) ? Math.trunc(value) : 0;
 }
 
+function roundCurrency(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
 function setBusyState(isBusy, message) {
   saveButton.disabled = isBusy;
   approveButton.disabled = isBusy;
   holdButton.disabled = isBusy;
   rejectButton.disabled = isBusy;
   duplicateButton.disabled = isBusy;
+  rerunParserButton.disabled = isBusy;
+  prevInvoiceButton.disabled = isBusy || prevInvoiceButton.disabled;
+  nextInvoiceButton.disabled = isBusy || nextInvoiceButton.disabled;
   reloadPdfButton.disabled = isBusy;
   reloadDebugButton.disabled = isBusy;
   statusMessage.textContent = message;
+}
+
+function formatCurrency(value) {
+  const number = Number(value || 0);
+  return number.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD"
+  });
 }
 
 function formatDateTime(value) {

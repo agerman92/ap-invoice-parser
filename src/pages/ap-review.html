@@ -19,6 +19,15 @@
       margin-top: 0;
     }
 
+    .top-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
     .toolbar {
       display: flex;
       gap: 12px;
@@ -57,7 +66,7 @@
     table {
       border-collapse: collapse;
       width: 100%;
-      min-width: 1250px;
+      min-width: 1600px;
     }
 
     th, td {
@@ -80,10 +89,66 @@
       padding: 8px 12px;
       cursor: pointer;
     }
+
+    .priority-badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: bold;
+      white-space: nowrap;
+    }
+
+    .priority-critical {
+      background: #fde7e9;
+      color: #9b1c1c;
+    }
+
+    .priority-high {
+      background: #fff0e0;
+      color: #a24b00;
+    }
+
+    .priority-medium {
+      background: #fff7d6;
+      color: #7a6100;
+    }
+
+    .priority-low {
+      background: #e9f6eb;
+      color: #17663a;
+    }
+
+    .flag-cell {
+      min-width: 260px;
+    }
+
+    .exception-badges {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+
+    .exception-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: bold;
+      background: #fff0f1;
+      color: #8f1f2d;
+      border: 1px solid #efc5cb;
+    }
   </style>
 </head>
 <body>
-  <h1>AP Invoice Review</h1>
+  <div class="top-nav">
+    <h1>AP Invoice Review</h1>
+    <div>
+      <a href="./ap-admin.html">Open Admin Dashboard</a>
+    </div>
+  </div>
 
   <div class="toolbar">
     <div class="field-group">
@@ -131,12 +196,13 @@
   </div>
 
   <div id="statusMessage" class="status-row">Loading invoices...</div>
-  <div class="muted">Tip: PO search is case-insensitive and matches partial values.</div>
+  <div class="muted">Invoices auto-refresh every 10 seconds and are sorted by review priority first, then newest created.</div>
 
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
+          <th>Priority</th>
           <th>Created</th>
           <th>File Name</th>
           <th>Vendor</th>
@@ -148,6 +214,8 @@
           <th>Review</th>
           <th>Duplicate</th>
           <th>Warnings</th>
+          <th>Exceptions</th>
+          <th>Top Exception Flags</th>
           <th>Open</th>
         </tr>
       </thead>
