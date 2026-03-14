@@ -184,8 +184,8 @@ async function writeInvoiceDraft(
   invoiceId: string,
   parsed: InvoiceExtraction,
   warnings: unknown[],
-  headerConfidence: Record<string, number> | null = null,
-  lineConfidence: unknown[] | null = null,
+  headerConfidence: Record<string, number> = {},
+  lineConfidence: unknown[] = [],
 ) {
   const resolvedVendor = await resolveVendorIdentity(supabase, parsed.vendor);
   const vendorNormalized =
@@ -346,9 +346,9 @@ async function processOneJob(
     const warnings = validateInvoiceExtraction(parsed);
 
     const headerConfidence =
-  (routed as { headerConfidence?: Record<string, number> }).headerConfidence ?? {};
-const lineConfidence =
-  (routed as { lineConfidence?: unknown[] }).lineConfidence ?? [];
+      (routed as { headerConfidence?: Record<string, number> }).headerConfidence ?? {};
+    const lineConfidence =
+      (routed as { lineConfidence?: unknown[] }).lineConfidence ?? [];
 
     const { error: extractionUpdateError } = await supabase
       .from("ap_invoice_extractions")
