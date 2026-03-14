@@ -36,7 +36,7 @@
       color: var(--blue);
     }
 
-    h1, h2 {
+    h1, h2, h3 {
       margin-top: 0;
     }
 
@@ -78,6 +78,45 @@
       color: var(--muted);
     }
 
+    .filter-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+    }
+
+    .filter-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 14px;
+      align-items: end;
+    }
+
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field-group label {
+      font-size: 12px;
+      font-weight: bold;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    .field-group input,
+    .field-group select {
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0f1828;
+      color: var(--text);
+    }
+
     .card-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -91,6 +130,16 @@
       border-radius: 14px;
       padding: 16px;
       box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    }
+
+    .card.clickable {
+      cursor: pointer;
+      transition: transform 0.12s ease, border-color 0.12s ease;
+    }
+
+    .card.clickable:hover {
+      transform: translateY(-2px);
+      border-color: #4b6382;
     }
 
     .card-title {
@@ -112,6 +161,30 @@
       margin-top: 8px;
       color: var(--muted);
       font-size: 12px;
+    }
+
+    .trend-row {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .trend-up {
+      color: #86efac;
+      font-weight: bold;
+    }
+
+    .trend-flat {
+      color: #cbd5e1;
+      font-weight: bold;
+    }
+
+    .trend-down {
+      color: #fca5a5;
+      font-weight: bold;
     }
 
     .card-green { border-left: 4px solid var(--green); }
@@ -232,29 +305,112 @@
 
   <div id="statusMessage" class="status">Loading dashboard...</div>
 
+  <section class="filter-panel">
+    <div class="panel-header">
+      <div>
+        <h2>Dashboard Filters</h2>
+        <div class="muted">Use filters to narrow the dashboard snapshot and drill into AP Review.</div>
+      </div>
+    </div>
+
+    <div class="filter-grid">
+      <div class="field-group">
+        <label for="datePreset">Date Range</label>
+        <select id="datePreset">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="365">Last 365 days</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+
+      <div class="field-group">
+        <label for="dateFrom">From</label>
+        <input id="dateFrom" type="date" />
+      </div>
+
+      <div class="field-group">
+        <label for="dateTo">To</label>
+        <input id="dateTo" type="date" />
+      </div>
+
+      <div class="field-group">
+        <label for="statusFilter">Invoice Status</label>
+        <select id="statusFilter">
+          <option value="">All</option>
+          <option value="needs_review">needs_review</option>
+          <option value="approved">approved</option>
+          <option value="duplicate">duplicate</option>
+          <option value="failed">failed</option>
+          <option value="queued">queued</option>
+          <option value="extracting">extracting</option>
+        </select>
+      </div>
+
+      <div class="field-group">
+        <label for="vendorFilter">Vendor</label>
+        <select id="vendorFilter">
+          <option value="">All Vendors</option>
+        </select>
+      </div>
+
+      <div class="field-group">
+        <label for="locationFilter">Location</label>
+        <select id="locationFilter" disabled>
+          <option value="">Location filter coming later</option>
+        </select>
+      </div>
+
+      <div class="field-group">
+        <button id="applyFiltersButton" type="button">Apply Filters</button>
+      </div>
+
+      <div class="field-group">
+        <button id="clearFiltersButton" type="button">Clear Filters</button>
+      </div>
+    </div>
+  </section>
+
   <div class="card-grid">
-    <div class="card card-yellow">
+    <div id="cardNeedsReview" class="card card-yellow clickable">
       <div class="card-title">Invoices Needing Review</div>
       <div id="needsReviewInvoices" class="card-value">0</div>
       <div class="card-sub">Current workload queue</div>
+      <div class="trend-row">
+        <span>vs prior period:</span>
+        <span id="needsReviewTrend" class="trend-flat">0%</span>
+      </div>
     </div>
 
-    <div class="card card-red">
+    <div id="cardCritical" class="card card-red clickable">
       <div class="card-title">Critical Priority Invoices</div>
       <div id="criticalInvoices" class="card-value">0</div>
       <div class="card-sub">Priority score 80+</div>
+      <div class="trend-row">
+        <span>vs prior period:</span>
+        <span id="criticalTrend" class="trend-flat">0%</span>
+      </div>
     </div>
 
-    <div class="card card-green">
-      <div class="card-title">Approved Today</div>
+    <div id="cardApprovedToday" class="card card-green clickable">
+      <div class="card-title">Approved In Range</div>
       <div id="approvedToday" class="card-value">0</div>
-      <div class="card-sub">Invoices approved today</div>
+      <div class="card-sub">Invoices approved in selected date range</div>
+      <div class="trend-row">
+        <span>vs prior period:</span>
+        <span id="approvedTrend" class="trend-flat">0%</span>
+      </div>
     </div>
 
-    <div class="card card-purple">
+    <div id="cardDuplicate" class="card card-purple clickable">
       <div class="card-title">Duplicate Invoices</div>
       <div id="duplicateInvoices" class="card-value">0</div>
       <div class="card-sub">Current duplicate status</div>
+      <div class="trend-row">
+        <span>vs prior period:</span>
+        <span id="duplicateTrend" class="trend-flat">0%</span>
+      </div>
     </div>
 
     <div class="card card-blue">
@@ -286,27 +442,27 @@
     <div class="panel-header">
       <div>
         <h2>Financial Snapshot</h2>
-        <div class="muted">Current invoice-dollar exposure and throughput snapshot.</div>
+        <div class="muted">Current invoice-dollar exposure and throughput snapshot for the selected filters.</div>
       </div>
     </div>
 
     <div class="card-grid">
-      <div class="card card-yellow">
+      <div id="cardReviewDollars" class="card card-yellow clickable">
         <div class="card-title">Dollars Needing Review</div>
         <div id="reviewDollars" class="card-value">$0</div>
       </div>
 
-      <div class="card card-green">
+      <div id="cardApprovedDollars" class="card card-green clickable">
         <div class="card-title">Approved Dollars</div>
         <div id="approvedDollars" class="card-value">$0</div>
       </div>
 
-      <div class="card card-purple">
+      <div id="cardDuplicateDollars" class="card card-purple clickable">
         <div class="card-title">Duplicate Dollars</div>
         <div id="duplicateDollars" class="card-value">$0</div>
       </div>
 
-      <div class="card card-red">
+      <div id="cardFailedDollars" class="card card-red clickable">
         <div class="card-title">Failed Dollars</div>
         <div id="failedDollars" class="card-value">$0</div>
       </div>
@@ -316,7 +472,7 @@
         <div id="avgInvoiceAmount" class="card-value">$0</div>
       </div>
 
-      <div class="card card-red">
+      <div id="cardHighRiskDollars" class="card card-red clickable">
         <div class="card-title">High-Risk Dollars</div>
         <div id="highRiskDollars" class="card-value">$0</div>
       </div>
