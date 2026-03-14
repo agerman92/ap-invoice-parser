@@ -58,6 +58,12 @@
       background: #fff;
     }
 
+    .pdf-panel {
+      position: sticky;
+      top: 16px;
+      align-self: start;
+    }
+
     .pdf-toolbar {
       display: flex;
       justify-content: space-between;
@@ -322,6 +328,10 @@
     @media (max-width: 1100px) {
       .page-layout {
         grid-template-columns: 1fr;
+      }
+
+      .pdf-panel {
+        position: static;
       }
 
       .pdf-frame-wrap {
