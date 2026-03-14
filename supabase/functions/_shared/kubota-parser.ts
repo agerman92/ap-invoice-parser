@@ -90,32 +90,58 @@ function detectKubota(layout: PdfLayoutResult): boolean {
 }
 
 function extractHeader(layout: PdfLayoutResult): Partial<InvoiceExtraction> {
+  const rows = groupRows(layout.items)
+    .filter((r) => r.page === 1)
+    .map((r) => ({
+      y: r.y,
+      text: rowText(r),
+      items: r.items,
+    }));
+
+  let invoiceDate = "";
+  let invoiceNumber = "";
+  let poNumber = "";
+  let shipNo = "";
+  let terms = "";
+
+  for (let i = 0; i < rows.length - 1; i++) {
+    const labelRow = rows[i].text.toUpperCase();
+    const valueRow = rows[i + 1].text;
+
+    if (
+      labelRow.includes("ORDER DATE") &&
+      labelRow.includes("DEALER PO NO") &&
+      labelRow.includes("TERMS") &&
+      labelRow.includes("INVOICE DATE") &&
+      labelRow.includes("INVOICE NO")
+    ) {
+      const valueTokens = valueRow.split(/\s+/);
+
+      if (valueTokens.length >= 6) {
+        invoiceDate = valueTokens[valueTokens.length - 2] || "";
+        invoiceNumber = valueTokens[valueTokens.length - 1] || "";
+        poNumber = valueTokens[1] || "";
+
+        const middle = valueTokens.slice(3, valueTokens.length - 2);
+        terms = middle.join(" ").trim();
+      }
+    }
+
+    if (
+      labelRow.includes("DATE SHIPPED") &&
+      labelRow.includes("SHIPPED FROM") &&
+      labelRow.includes("SHIP NO") &&
+      labelRow.includes("ORDER TYPE")
+    ) {
+      const valueTokens = valueRow.split(/\s+/);
+      const numericToken = valueTokens.find((t) => /^[0-9]{6,}$/.test(t));
+      if (numericToken) {
+        shipNo = numericToken;
+      }
+    }
+  }
+
   const text = layout.plainText;
-
-  const invoiceNumber = firstMatch(
-    text,
-    /INVOICE\s+NO\s*:?\s*([A-Z0-9-]+)/i,
-  );
-
-  const invoiceDate = firstMatch(
-    text,
-    /INVOICE\s+DATE\s*:?\s*([0-9/]+)/i,
-  );
-
-  const poNumber = firstMatch(
-    text,
-    /DEALER\s+PO\s+NO\s*:?\s*([A-Z0-9-]+)/i,
-  );
-
-  const shipNo = firstMatch(
-    text,
-    /SHIP\s+NO\s*:?\s*([A-Z0-9-]+)/i,
-  );
-
-  const terms = firstMatch(
-    text,
-    /TERMS\s*:?\s*([A-Z0-9-]+)/i,
-  );
 
   const totalGross = firstMatch(
     text,
@@ -129,7 +155,7 @@ function extractHeader(layout: PdfLayoutResult): Partial<InvoiceExtraction> {
 
   const total = firstMatch(
     text,
-    /(?:^|\n)\s*TOTAL\s+([0-9,]+\.[0-9]{2})(?:\s|$)/im,
+    /(?:^|\n)\s*TOTAL\s+\$?\s*([0-9,]+\.[0-9]{2})(?:\s|$)/im,
   );
 
   return {
