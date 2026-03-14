@@ -2,7 +2,6 @@ import type { InvoiceExtraction } from "./invoice-schema.ts";
 import type { PdfLayoutResult } from "./pdf-layout.ts";
 import { parseKubotaInvoice } from "./kubota-parser.ts";
 import { parseManitouInvoice } from "./manitou-parser.ts";
-import { extractStructuredInvoice } from "./openai.ts";
 
 export type ParseResult = {
   parsed: InvoiceExtraction;
@@ -32,14 +31,6 @@ export async function parseInvoiceWithRouter(
   }
 
   throw new Error(
-    "No vendor parser matched invoice before fallback. Kubota detection did not match."
+    "No vendor parser matched invoice. Kubota and Manitou both returned null."
   );
-
-  // Leave this disabled until Kubota is confirmed:
-  // const parsed = await extractStructuredInvoice(layout.plainText);
-  // return {
-  //   parsed,
-  //   parserVersion: "llm-v1",
-  //   parserType: "llm_fallback",
-  // };
 }
