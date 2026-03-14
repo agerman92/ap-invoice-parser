@@ -1,5 +1,6 @@
 import type { InvoiceExtraction } from "./invoice-schema.ts";
 import type { PdfLayoutResult } from "./pdf-layout.ts";
+import { parseKubotaInvoice } from "./kubota-parser.ts";
 import { parseManitouInvoice } from "./manitou-parser.ts";
 import { extractStructuredInvoice } from "./openai.ts";
 
@@ -12,6 +13,15 @@ export type ParseResult = {
 export async function parseInvoiceWithRouter(
   layout: PdfLayoutResult,
 ): Promise<ParseResult> {
+  const kubota = parseKubotaInvoice(layout);
+  if (kubota) {
+    return {
+      parsed: kubota,
+      parserVersion: "kubota-v1",
+      parserType: "vendor_layout",
+    };
+  }
+
   const manitou = parseManitouInvoice(layout);
   if (manitou) {
     return {
