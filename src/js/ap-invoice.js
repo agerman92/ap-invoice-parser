@@ -283,12 +283,14 @@ function renderInvoiceSummaryBar() {
   const parser = latestExtraction?.parser_version || "Unknown Parser";
   const priority = Number(currentInvoice?.review_priority || 0);
   const vendorMatchMethod = currentInvoice?.vendor_match_method || "n/a";
+  const total = Number(currentInvoice?.total_invoice || 0);
 
   invoiceSummaryBar.innerHTML = `
     <span class="summary-pill">Vendor: ${escapeHtml(vendor)}</span>
     <span class="summary-pill">Parser: ${escapeHtml(parser)}</span>
     <span class="summary-pill">Priority: ${priority}</span>
     <span class="summary-pill">Vendor Match: ${escapeHtml(vendorMatchMethod)}</span>
+    <span class="summary-pill">Total: ${escapeHtml(formatCurrency(total))}</span>
   `;
 }
 

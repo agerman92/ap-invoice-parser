@@ -12,6 +12,14 @@ const refreshButton = document.getElementById("refreshButton");
 let debounceTimer = null;
 let autoRefreshTimer = null;
 
+const pageParams = new URLSearchParams(window.location.search);
+const urlVendor = pageParams.get("vendor") || "";
+const urlFrom = pageParams.get("from") || "";
+const urlTo = pageParams.get("to") || "";
+const urlMinPriority = Number(pageParams.get("minPriority") || 0);
+
+applyUrlFiltersToVisibleInputs();
+
 async function loadInvoices() {
   statusMessage.textContent = "Loading invoices...";
 
@@ -67,15 +75,19 @@ async function loadInvoices() {
     return;
   }
 
-  if (!data || data.length === 0) {
+  let rows = Array.isArray(data) ? [...data] : [];
+
+  rows = applyHiddenUrlFilters(rows);
+
+  if (!rows.length) {
     statusMessage.textContent = "No invoices found.";
     invoiceTableBody.innerHTML = "";
     return;
   }
 
-  statusMessage.textContent = `${data.length} invoice(s) loaded.`;
+  statusMessage.textContent = buildStatusMessage(rows.length);
 
-  invoiceTableBody.innerHTML = data.map((invoice) => {
+  invoiceTableBody.innerHTML = rows.map((invoice) => {
     const warningCount = Array.isArray(invoice.warnings) ? invoice.warnings.length : 0;
     const exceptionCount = Number(invoice.exception_count || 0);
     const priorityLabel = getPriorityLabel(invoice.review_priority);
@@ -91,9 +103,9 @@ async function loadInvoices() {
         <td>${escapeHtml(invoice.po_number || "")}</td>
         <td>${escapeHtml(invoice.invoice_date || "")}</td>
         <td>${formatCurrency(invoice.total_invoice)}</td>
-        <td>${escapeHtml(invoice.status || "")}</td>
-        <td>${escapeHtml(invoice.review_status || "")}</td>
-        <td>${escapeHtml(invoice.duplicate_status || "")}</td>
+        <td>${statusBadge(invoice.status || "")}</td>
+        <td>${reviewBadge(invoice.review_status || "")}</td>
+        <td>${duplicateBadge(invoice.duplicate_status || "")}</td>
         <td>${warningCount}</td>
         <td>${exceptionCount}</td>
         <td>
@@ -110,6 +122,56 @@ async function loadInvoices() {
       </tr>
     `;
   }).join("");
+}
+
+function applyUrlFiltersToVisibleInputs() {
+  const status = pageParams.get("status");
+  const review = pageParams.get("review");
+  const duplicate = pageParams.get("duplicate");
+  const po = pageParams.get("po");
+
+  if (status && statusFilter) statusFilter.value = status;
+  if (review && reviewFilter) reviewFilter.value = review;
+  if (duplicate && duplicateFilter) duplicateFilter.value = duplicate;
+  if (po && poSearch) poSearch.value = po;
+}
+
+function applyHiddenUrlFilters(rows) {
+  return rows.filter((row) => {
+    if (urlVendor && String(row.vendor || "") !== urlVendor) {
+      return false;
+    }
+
+    if (urlFrom) {
+      const created = new Date(row.created_at);
+      const fromDate = new Date(`${urlFrom}T00:00:00`);
+      if (created < fromDate) return false;
+    }
+
+    if (urlTo) {
+      const created = new Date(row.created_at);
+      const toExclusive = new Date(`${urlTo}T00:00:00`);
+      toExclusive.setDate(toExclusive.getDate() + 1);
+      if (created >= toExclusive) return false;
+    }
+
+    if (urlMinPriority > 0 && Number(row.review_priority || 0) < urlMinPriority) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function buildStatusMessage(count) {
+  const notes = [];
+
+  if (urlVendor) notes.push(`vendor: ${urlVendor}`);
+  if (urlFrom || urlTo) notes.push(`date filtered`);
+  if (urlMinPriority > 0) notes.push(`min priority: ${urlMinPriority}`);
+
+  const suffix = notes.length ? ` (${notes.join(" · ")})` : "";
+  return `${count} invoice(s) loaded${suffix}.`;
 }
 
 function renderExceptionBadges(flags) {
@@ -150,6 +212,64 @@ function priorityBadge(value) {
   return `<span class="priority-badge ${klass}">${label} (${n})</span>`;
 }
 
+function statusBadge(value) {
+  const normalized = String(value || "").toLowerCase();
+
+  if (normalized === "failed") {
+    return `<span class="exception-badge">Failed</span>`;
+  }
+
+  if (normalized === "needs_review") {
+    return `<span class="priority-badge priority-high">Needs Review</span>`;
+  }
+
+  if (normalized === "approved") {
+    return `<span class="priority-badge priority-low">Approved</span>`;
+  }
+
+  if (normalized === "duplicate") {
+    return `<span class="priority-badge priority-medium">Duplicate</span>`;
+  }
+
+  return escapeHtml(value || "");
+}
+
+function reviewBadge(value) {
+  const normalized = String(value || "").toLowerCase();
+
+  if (normalized === "approved") {
+    return `<span class="priority-badge priority-low">Approved</span>`;
+  }
+
+  if (normalized === "rejected") {
+    return `<span class="exception-badge">Rejected</span>`;
+  }
+
+  if (normalized === "in_review") {
+    return `<span class="priority-badge priority-medium">In Review</span>`;
+  }
+
+  return escapeHtml(value || "");
+}
+
+function duplicateBadge(value) {
+  const normalized = String(value || "").toLowerCase();
+
+  if (normalized === "confirmed") {
+    return `<span class="exception-badge">Confirmed</span>`;
+  }
+
+  if (normalized === "suspected") {
+    return `<span class="priority-badge priority-medium">Suspected</span>`;
+  }
+
+  if (normalized === "clear") {
+    return `<span class="priority-badge priority-low">Clear</span>`;
+  }
+
+  return escapeHtml(value || "");
+}
+
 function scheduleReload() {
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
@@ -162,6 +282,10 @@ function clearFilters() {
   statusFilter.value = "";
   reviewFilter.value = "";
   duplicateFilter.value = "";
+
+  const cleanUrl = window.location.pathname;
+  window.history.replaceState({}, "", cleanUrl);
+
   loadInvoices();
 }
 
