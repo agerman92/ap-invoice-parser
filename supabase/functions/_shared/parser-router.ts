@@ -31,6 +31,7 @@ export async function parseInvoiceWithRouter(
     };
   }
 
+  try {
   const parsed = await extractStructuredInvoice(layout.plainText);
 
   return {
@@ -38,4 +39,10 @@ export async function parseInvoiceWithRouter(
     parserVersion: "llm-v1",
     parserType: "llm_fallback",
   };
+} catch (err) {
+  throw new Error(
+    "No vendor parser matched invoice and LLM fallback failed. " +
+    "Likely vendor detection issue or OpenAI config."
+  );
+}
 }

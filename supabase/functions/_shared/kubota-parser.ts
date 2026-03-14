@@ -19,7 +19,10 @@ function match(text: string, r: RegExp) {
 function detectKubota(layout: PdfLayoutResult) {
   const t = layout.plainText.toUpperCase();
 
-  const vendorMatch = t.includes("KUBOTA TRACTOR");
+  const vendorMatch =
+    t.includes("KUBOTA") &&
+    (t.includes("TRACTOR") || t.includes("CORPORATION"));
+
   const tableMatch =
     t.includes("ORDERED PART") ||
     t.includes("DEALER NET") ||
