@@ -5,155 +5,414 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AP Admin Dashboard</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
-      background: #fafafa;
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --border: #334155;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --green: #22c55e;
+      --yellow: #f59e0b;
+      --red: #ef4444;
+      --blue: #38bdf8;
+      --purple: #a78bfa;
+      --pink: #f472b6;
     }
 
-    h1 {
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 20px;
+    }
+
+    a {
+      color: var(--blue);
+    }
+
+    h1, h2 {
       margin-top: 0;
     }
 
     .top-nav {
-      margin-bottom: 16px;
+      margin-bottom: 18px;
+    }
+
+    .top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #273449;
     }
 
     .status {
-      margin-bottom: 16px;
+      margin-bottom: 18px;
       font-weight: bold;
+      color: var(--muted);
     }
 
     .card-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
       gap: 14px;
       margin-bottom: 20px;
     }
 
     .card {
-      background: #fff;
-      border: 1px solid #ddd;
-      border-radius: 8px;
+      background: linear-gradient(180deg, #172033 0%, #111827 100%);
+      border: 1px solid var(--border);
+      border-radius: 14px;
       padding: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.18);
     }
 
     .card-title {
       font-size: 12px;
       text-transform: uppercase;
-      color: #666;
-      margin-bottom: 8px;
+      color: var(--muted);
+      margin-bottom: 10px;
       font-weight: bold;
+      letter-spacing: 0.04em;
     }
 
     .card-value {
-      font-size: 28px;
+      font-size: 30px;
       font-weight: bold;
+      line-height: 1.1;
     }
 
+    .card-sub {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .card-green { border-left: 4px solid var(--green); }
+    .card-yellow { border-left: 4px solid var(--yellow); }
+    .card-red { border-left: 4px solid var(--red); }
+    .card-blue { border-left: 4px solid var(--blue); }
+    .card-purple { border-left: 4px solid var(--purple); }
+    .card-pink { border-left: 4px solid var(--pink); }
+
     .panel {
-      background: #fff;
-      border: 1px solid #ddd;
-      border-radius: 8px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
       padding: 16px;
       margin-bottom: 20px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
+      min-width: 760px;
     }
 
     th, td {
-      border: 1px solid #ddd;
-      padding: 8px;
+      border: 1px solid var(--border);
+      padding: 10px;
       text-align: left;
       vertical-align: top;
     }
 
     th {
-      background: #f3f3f3;
+      background: #182234;
+      color: #cbd5e1;
     }
 
-    button {
-      padding: 8px 12px;
-      cursor: pointer;
-      margin-bottom: 12px;
+    td {
+      background: #101827;
     }
 
-    .muted {
-      color: #666;
-      font-size: 13px;
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: bold;
+      border: 1px solid transparent;
+    }
+
+    .pill-red {
+      background: rgba(239, 68, 68, 0.12);
+      color: #fca5a5;
+      border-color: rgba(239, 68, 68, 0.25);
+    }
+
+    .pill-yellow {
+      background: rgba(245, 158, 11, 0.12);
+      color: #fcd34d;
+      border-color: rgba(245, 158, 11, 0.25);
+    }
+
+    .pill-green {
+      background: rgba(34, 197, 94, 0.12);
+      color: #86efac;
+      border-color: rgba(34, 197, 94, 0.25);
+    }
+
+    .pill-blue {
+      background: rgba(56, 189, 248, 0.12);
+      color: #7dd3fc;
+      border-color: rgba(56, 189, 248, 0.25);
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 1000px) {
+      .two-col {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 <body>
   <div class="top-nav">
     <p><a href="./ap-review.html">← Back to AP Review</a></p>
-    <h1>AP Admin Dashboard</h1>
+    <div class="top-row">
+      <div>
+        <h1>AP Admin Dashboard</h1>
+        <div class="muted">Operations, exception monitoring, and financial visibility for invoice processing.</div>
+      </div>
+      <div class="actions">
+        <button id="refreshButton" type="button">Refresh Dashboard</button>
+      </div>
+    </div>
   </div>
 
-  <button id="refreshButton" type="button">Refresh Dashboard</button>
   <div id="statusMessage" class="status">Loading dashboard...</div>
 
   <div class="card-grid">
-    <div class="card">
-      <div class="card-title">Queued Jobs</div>
-      <div id="queuedJobs" class="card-value">0</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Retry Jobs</div>
-      <div id="retryJobs" class="card-value">0</div>
-    </div>
-    <div class="card">
-      <div class="card-title">Failed Jobs</div>
-      <div id="failedJobs" class="card-value">0</div>
-    </div>
-    <div class="card">
+    <div class="card card-yellow">
       <div class="card-title">Invoices Needing Review</div>
       <div id="needsReviewInvoices" class="card-value">0</div>
+      <div class="card-sub">Current workload queue</div>
     </div>
-    <div class="card">
+
+    <div class="card card-red">
       <div class="card-title">Critical Priority Invoices</div>
       <div id="criticalInvoices" class="card-value">0</div>
+      <div class="card-sub">Priority score 80+</div>
     </div>
-    <div class="card">
+
+    <div class="card card-green">
+      <div class="card-title">Approved Today</div>
+      <div id="approvedToday" class="card-value">0</div>
+      <div class="card-sub">Invoices approved today</div>
+    </div>
+
+    <div class="card card-purple">
+      <div class="card-title">Duplicate Invoices</div>
+      <div id="duplicateInvoices" class="card-value">0</div>
+      <div class="card-sub">Current duplicate status</div>
+    </div>
+
+    <div class="card card-blue">
+      <div class="card-title">Queued Jobs</div>
+      <div id="queuedJobs" class="card-value">0</div>
+      <div class="card-sub">Waiting for worker</div>
+    </div>
+
+    <div class="card card-yellow">
+      <div class="card-title">Retry Jobs</div>
+      <div id="retryJobs" class="card-value">0</div>
+      <div class="card-sub">Jobs scheduled to retry</div>
+    </div>
+
+    <div class="card card-red">
+      <div class="card-title">Failed Jobs</div>
+      <div id="failedJobs" class="card-value">0</div>
+      <div class="card-sub">Queue failures</div>
+    </div>
+
+    <div class="card card-red">
       <div class="card-title">Failed Extractions (7d)</div>
       <div id="failedExtractions7d" class="card-value">0</div>
+      <div class="card-sub">Recent parser failures</div>
     </div>
   </div>
 
-  <section class="panel">
-    <h2>Recent Failed / Retry Jobs</h2>
-    <p class="muted">Most recent queue issues for support visibility.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Job ID</th>
-          <th>Invoice ID</th>
-          <th>Status</th>
-          <th>Attempts</th>
-          <th>Last Error</th>
-          <th>Updated</th>
-        </tr>
-      </thead>
-      <tbody id="jobIssuesTableBody"></tbody>
-    </table>
-  </section>
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>Financial Snapshot</h2>
+        <div class="muted">Current invoice-dollar exposure and throughput snapshot.</div>
+      </div>
+    </div>
 
-  <section class="panel">
-    <h2>Top Invoice Exception Flags</h2>
-    <p class="muted">Most common current issues seen across invoices.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Flag Code</th>
-          <th>Count</th>
-        </tr>
-      </thead>
-      <tbody id="topFlagsTableBody"></tbody>
-    </table>
-  </section>
+    <div class="card-grid">
+      <div class="card card-yellow">
+        <div class="card-title">Dollars Needing Review</div>
+        <div id="reviewDollars" class="card-value">$0</div>
+      </div>
+
+      <div class="card card-green">
+        <div class="card-title">Approved Dollars</div>
+        <div id="approvedDollars" class="card-value">$0</div>
+      </div>
+
+      <div class="card card-purple">
+        <div class="card-title">Duplicate Dollars</div>
+        <div id="duplicateDollars" class="card-value">$0</div>
+      </div>
+
+      <div class="card card-red">
+        <div class="card-title">Failed Dollars</div>
+        <div id="failedDollars" class="card-value">$0</div>
+      </div>
+
+      <div class="card card-blue">
+        <div class="card-title">Average Invoice Amount</div>
+        <div id="avgInvoiceAmount" class="card-value">$0</div>
+      </div>
+
+      <div class="card card-red">
+        <div class="card-title">High-Risk Dollars</div>
+        <div id="highRiskDollars" class="card-value">$0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <h2>Recent Queue Issues</h2>
+          <div class="muted">Most recent retry/failed jobs requiring support attention.</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Job ID</th>
+              <th>Status</th>
+              <th>Attempts</th>
+              <th>Last Error</th>
+              <th>Updated</th>
+            </tr>
+          </thead>
+          <tbody id="jobIssuesTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <h2>Top Exception Flags</h2>
+          <div class="muted">Most common exception conditions across invoices.</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Flag Code</th>
+              <th>Count</th>
+            </tr>
+          </thead>
+          <tbody id="topFlagsTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="two-col">
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <h2>Top Vendors by Invoice Dollars</h2>
+          <div class="muted">Largest invoice-dollar concentration by vendor.</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Vendor</th>
+              <th>Invoice Count</th>
+              <th>Total Dollars</th>
+            </tr>
+          </thead>
+          <tbody id="topVendorsTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <h2>Recent High-Priority Invoices</h2>
+          <div class="muted">Newest high-priority invoices for immediate review focus.</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Priority</th>
+              <th>Vendor</th>
+              <th>Invoice #</th>
+              <th>Total</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="highPriorityInvoicesTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
 
   <script type="module" src="../js/ap-admin.js"></script>
 </body>
