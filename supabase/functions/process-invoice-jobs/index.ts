@@ -346,9 +346,9 @@ async function processOneJob(
     const warnings = validateInvoiceExtraction(parsed);
 
     const headerConfidence =
-      (routed as { headerConfidence?: Record<string, number> }).headerConfidence ?? null;
-    const lineConfidence =
-      (routed as { lineConfidence?: unknown[] }).lineConfidence ?? null;
+  (routed as { headerConfidence?: Record<string, number> }).headerConfidence ?? {};
+const lineConfidence =
+  (routed as { lineConfidence?: unknown[] }).lineConfidence ?? [];
 
     const { error: extractionUpdateError } = await supabase
       .from("ap_invoice_extractions")
