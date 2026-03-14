@@ -92,7 +92,7 @@ async function loadInvoiceDetail() {
   renderWarnings(invoice.warnings);
   renderLines(currentLines);
   await loadPdfPreview(invoice);
-  await loadLatestExtraction(invoice.id);
+  await loadLatestExtraction(invoice.id, invoice.invoice_number);
 
   statusMessage.textContent = "Invoice loaded.";
 }
@@ -130,7 +130,9 @@ async function loadPdfPreview(invoice) {
   }
 }
 
-async function loadLatestExtraction(invoiceId) {
+async function loadLatestExtraction(invoiceId, invoiceNumber = "") {
+  console.log("Loading latest extraction for invoiceId:", invoiceId, "invoiceNumber:", invoiceNumber);
+
   const { data, error } = await supabase
     .from("ap_invoice_extractions")
     .select(`
@@ -154,6 +156,8 @@ async function loadLatestExtraction(invoiceId) {
     .limit(1)
     .maybeSingle();
 
+  console.log("Extraction query result:", { data, error });
+
   if (error) {
     console.error("Error loading extraction debug:", error);
     renderDebugFallback(`Failed to load extraction debug: ${error.message}`);
@@ -161,6 +165,14 @@ async function loadLatestExtraction(invoiceId) {
   }
 
   latestExtraction = data || null;
+
+  if (!latestExtraction) {
+    renderDebugFallback(
+      `No extraction record found for this invoice yet. invoiceId=${invoiceId}${invoiceNumber ? `, invoiceNumber=${invoiceNumber}` : ""}`
+    );
+    return;
+  }
+
   renderDebugPanel(latestExtraction);
 }
 
@@ -174,7 +186,7 @@ async function reloadPdf() {
 async function reloadDebugPanel() {
   if (!currentInvoice) return;
   statusMessage.textContent = "Refreshing debug panel...";
-  await loadLatestExtraction(currentInvoice.id);
+  await loadLatestExtraction(currentInvoice.id, currentInvoice.invoice_number);
   statusMessage.textContent = "Debug panel refreshed.";
 }
 
