@@ -31,18 +31,15 @@ export async function parseInvoiceWithRouter(
     };
   }
 
-  try {
-  const parsed = await extractStructuredInvoice(layout.plainText);
-
-  return {
-    parsed,
-    parserVersion: "llm-v1",
-    parserType: "llm_fallback",
-  };
-} catch (err) {
   throw new Error(
-    "No vendor parser matched invoice and LLM fallback failed. " +
-    "Likely vendor detection issue or OpenAI config."
+    "No vendor parser matched invoice before fallback. Kubota detection did not match."
   );
-}
+
+  // Leave this disabled until Kubota is confirmed:
+  // const parsed = await extractStructuredInvoice(layout.plainText);
+  // return {
+  //   parsed,
+  //   parserVersion: "llm-v1",
+  //   parserType: "llm_fallback",
+  // };
 }

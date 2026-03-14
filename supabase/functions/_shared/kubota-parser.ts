@@ -61,20 +61,32 @@ function rowText(row: Row): string {
 }
 
 function detectKubota(layout: PdfLayoutResult): boolean {
-  const t = layout.plainText.toUpperCase();
+  const plain = layout.plainText.toUpperCase();
+  const itemText = layout.items.map((i) => i.text.toUpperCase()).join(" ");
+  const rows = groupRows(layout.items);
+  const topRowsText = rows
+    .filter((r) => r.page === 1)
+    .slice(0, 40)
+    .map((r) => rowText(r).toUpperCase())
+    .join(" ");
 
-  const hasVendor =
-    t.includes("KUBOTA") &&
-    (t.includes("TRACTOR") || t.includes("CORPORATION"));
+  const combined = `${plain} ${itemText} ${topRowsText}`;
+
+  const hasKubota = combined.includes("KUBOTA");
+  const hasTractorOrCorp =
+    combined.includes("TRACTOR") || combined.includes("CORPORATION");
 
   const hasTableSignals =
-    t.includes("ORDERED PART") ||
-    t.includes("SHIPPED PART") ||
-    t.includes("DEALER NET") ||
-    t.includes("EXT NET") ||
-    t.includes("DEALER PO");
+    combined.includes("ORDERED PART") ||
+    combined.includes("ORDERED PART NO") ||
+    combined.includes("SHIPPED PART") ||
+    combined.includes("SHIPPED PART NO") ||
+    combined.includes("DEALER NET") ||
+    combined.includes("EXT NET") ||
+    combined.includes("DEALER PO") ||
+    combined.includes("DEALER PO NO");
 
-  return hasVendor && hasTableSignals;
+  return hasKubota && hasTractorOrCorp && hasTableSignals;
 }
 
 function extractHeader(layout: PdfLayoutResult): Partial<InvoiceExtraction> {
@@ -171,8 +183,6 @@ function isNoiseRow(text: string): boolean {
 function parsePartRow(text: string, lineNumber: number): InvoiceLine | null {
   const normalized = clean(text);
 
-  // Expected pattern:
-  // ORDERED_PART SHIPPED_PART ORD_QTY SHIP_QTY DESCRIPTION DEALER_GROSS DISC DEALER_NET EXT_GROSS EXT_NET
   const match = normalized.match(
     /^(\S+)\s+(\S+)\s+([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)\s+(.+?)\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})$/i,
   );
