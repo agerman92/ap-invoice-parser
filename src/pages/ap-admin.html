@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AP Admin Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #fafafa;
+    }
+
+    h1 {
+      margin-top: 0;
+    }
+
+    .top-nav {
+      margin-bottom: 16px;
+    }
+
+    .status {
+      margin-bottom: 16px;
+      font-weight: bold;
+    }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .card-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #666;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+
+    .card-value {
+      font-size: 28px;
+      font-weight: bold;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f3f3f3;
+    }
+
+    button {
+      padding: 8px 12px;
+      cursor: pointer;
+      margin-bottom: 12px;
+    }
+
+    .muted {
+      color: #666;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="top-nav">
+    <p><a href="./ap-review.html">← Back to AP Review</a></p>
+    <h1>AP Admin Dashboard</h1>
+  </div>
+
+  <button id="refreshButton" type="button">Refresh Dashboard</button>
+  <div id="statusMessage" class="status">Loading dashboard...</div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Queued Jobs</div>
+      <div id="queuedJobs" class="card-value">0</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Retry Jobs</div>
+      <div id="retryJobs" class="card-value">0</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Failed Jobs</div>
+      <div id="failedJobs" class="card-value">0</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Invoices Needing Review</div>
+      <div id="needsReviewInvoices" class="card-value">0</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Critical Priority Invoices</div>
+      <div id="criticalInvoices" class="card-value">0</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Failed Extractions (7d)</div>
+      <div id="failedExtractions7d" class="card-value">0</div>
+    </div>
+  </div>
+
+  <section class="panel">
+    <h2>Recent Failed / Retry Jobs</h2>
+    <p class="muted">Most recent queue issues for support visibility.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Job ID</th>
+          <th>Invoice ID</th>
+          <th>Status</th>
+          <th>Attempts</th>
+          <th>Last Error</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody id="jobIssuesTableBody"></tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2>Top Invoice Exception Flags</h2>
+    <p class="muted">Most common current issues seen across invoices.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Flag Code</th>
+          <th>Count</th>
+        </tr>
+      </thead>
+      <tbody id="topFlagsTableBody"></tbody>
+    </table>
+  </section>
+
+  <script type="module" src="../js/ap-admin.js"></script>
+</body>
+</html>

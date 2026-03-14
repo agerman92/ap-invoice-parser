@@ -3,15 +3,21 @@ import { supabase } from "../lib/supabaseClient.js";
 const statusMessage = document.getElementById("statusMessage");
 const invoiceHeaderForm = document.getElementById("invoiceHeaderForm");
 const invoiceWarnings = document.getElementById("invoiceWarnings");
+const invoiceExceptions = document.getElementById("invoiceExceptions");
 const lineTableBody = document.getElementById("lineTableBody");
 const saveButton = document.getElementById("saveButton");
 const approveButton = document.getElementById("approveButton");
+const holdButton = document.getElementById("holdButton");
+const rejectButton = document.getElementById("rejectButton");
 const duplicateButton = document.getElementById("duplicateButton");
 const reloadPdfButton = document.getElementById("reloadPdfButton");
 const reloadDebugButton = document.getElementById("reloadDebugButton");
 const pdfFrame = document.getElementById("pdfFrame");
 const pdfFallback = document.getElementById("pdfFallback");
 const openPdfLink = document.getElementById("openPdfLink");
+const apNotes = document.getElementById("apNotes");
+const holdReason = document.getElementById("holdReason");
+const rejectionReason = document.getElementById("rejectionReason");
 
 const debugExtractionId = document.getElementById("debugExtractionId");
 const debugParserVersion = document.getElementById("debugParserVersion");
@@ -41,6 +47,8 @@ async function initPage() {
 
     saveButton.addEventListener("click", saveChanges);
     approveButton.addEventListener("click", approveInvoice);
+    holdButton.addEventListener("click", putInvoiceOnHold);
+    rejectButton.addEventListener("click", rejectInvoice);
     duplicateButton.addEventListener("click", markDuplicate);
     reloadPdfButton.addEventListener("click", reloadPdf);
     reloadDebugButton.addEventListener("click", reloadDebugPanel);
@@ -88,11 +96,14 @@ async function loadInvoiceDetail() {
   currentInvoice = invoice;
   currentLines = lines || [];
 
-  renderInvoiceHeaderForm(invoice);
+  renderWorkflowValues(invoice);
   renderWarnings(invoice.warnings);
-  renderLines(currentLines);
+  renderExceptions(invoice.exception_flags, invoice.review_priority);
   await loadPdfPreview(invoice);
   await loadLatestExtraction(invoice.id, invoice.invoice_number);
+
+  renderInvoiceHeaderForm(invoice);
+  renderLines(currentLines);
 
   statusMessage.textContent = "Invoice loaded.";
 }
@@ -131,8 +142,6 @@ async function loadPdfPreview(invoice) {
 }
 
 async function loadLatestExtraction(invoiceId, invoiceNumber = "") {
-  console.log("Loading latest extraction for invoiceId:", invoiceId, "invoiceNumber:", invoiceNumber);
-
   const { data, error } = await supabase
     .from("ap_invoice_extractions")
     .select(`
@@ -146,6 +155,8 @@ async function loadLatestExtraction(invoiceId, invoiceNumber = "") {
       raw_text,
       structured_json,
       warnings,
+      header_confidence,
+      line_confidence,
       started_at,
       completed_at,
       error_message,
@@ -156,11 +167,10 @@ async function loadLatestExtraction(invoiceId, invoiceNumber = "") {
     .limit(1)
     .maybeSingle();
 
-  console.log("Extraction query result:", { data, error });
-
   if (error) {
     console.error("Error loading extraction debug:", error);
     renderDebugFallback(`Failed to load extraction debug: ${error.message}`);
+    latestExtraction = null;
     return;
   }
 
@@ -187,7 +197,15 @@ async function reloadDebugPanel() {
   if (!currentInvoice) return;
   statusMessage.textContent = "Refreshing debug panel...";
   await loadLatestExtraction(currentInvoice.id, currentInvoice.invoice_number);
+  renderInvoiceHeaderForm(currentInvoice);
+  renderLines(currentLines);
   statusMessage.textContent = "Debug panel refreshed.";
+}
+
+function renderWorkflowValues(invoice) {
+  apNotes.value = invoice.ap_notes || "";
+  holdReason.value = invoice.hold_reason || "";
+  rejectionReason.value = invoice.rejection_reason || "";
 }
 
 function renderInvoiceHeaderForm(invoice) {
@@ -216,9 +234,16 @@ function renderInvoiceHeaderForm(invoice) {
 function buildInput(name, label, value, readonly = false, type = "text", step = "") {
   const stepAttr = step ? `step="${step}"` : "";
   const readonlyAttr = readonly ? "readonly" : "";
+  const confidence = getHeaderConfidence(name);
+  const groupClass = confidenceClass(confidence);
+  const badgeHtml = confidenceBadge(confidence);
+
   return `
-    <div class="field-group">
-      <label for="${name}">${label}</label>
+    <div class="field-group ${groupClass}" data-field="${name}">
+      <label for="${name}">
+        <span>${label}</span>
+        ${badgeHtml}
+      </label>
       <input
         id="${name}"
         name="${name}"
@@ -233,9 +258,16 @@ function buildInput(name, label, value, readonly = false, type = "text", step = 
 
 function buildTextArea(name, label, value, readonly = false) {
   const readonlyAttr = readonly ? "readonly" : "";
+  const confidence = getHeaderConfidence(name);
+  const groupClass = confidenceClass(confidence);
+  const badgeHtml = confidenceBadge(confidence);
+
   return `
-    <div class="field-group field-full">
-      <label for="${name}">${label}</label>
+    <div class="field-group field-full ${groupClass}" data-field="${name}">
+      <label for="${name}">
+        <span>${label}</span>
+        ${badgeHtml}
+      </label>
       <textarea id="${name}" name="${name}" rows="3" ${readonlyAttr}>${escapeHtml(value)}</textarea>
     </div>
   `;
@@ -260,6 +292,26 @@ function renderWarnings(warnings) {
   `;
 }
 
+function renderExceptions(flags, priority) {
+  if (!Array.isArray(flags) || flags.length === 0) {
+    invoiceExceptions.innerHTML = `<p>No exception flags. Review priority: <strong>${Number(priority || 0)}</strong></p>`;
+    return;
+  }
+
+  invoiceExceptions.innerHTML = `
+    <p><strong>Review priority:</strong> ${Number(priority || 0)}</p>
+    <ul>
+      ${flags.map((flag) => `
+        <li>
+          <strong>${escapeHtml(flag.code || "")}</strong>:
+          ${escapeHtml(flag.message || "")}
+          (${escapeHtml(flag.severity || "")})
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
 function renderLines(lines) {
   if (!lines.length) {
     lineTableBody.innerHTML = `
@@ -272,23 +324,23 @@ function renderLines(lines) {
 
   lineTableBody.innerHTML = lines.map((line, index) => `
     <tr data-line-index="${index}">
-      <td><input class="line-input" data-field="line_number" type="number" value="${line.line_number ?? index + 1}" /></td>
+      <td><input class="line-input ${lineConfidenceClass(line.line_number, "line_number")}" data-field="line_number" type="number" value="${line.line_number ?? index + 1}" /></td>
       <td>
-        <select class="line-input" data-field="line_type">
+        <select class="line-input ${lineConfidenceClass(line.line_number, "line_type")}" data-field="line_type">
           <option value="PART" ${line.line_type === "PART" ? "selected" : ""}>PART</option>
           <option value="FREIGHT" ${line.line_type === "FREIGHT" ? "selected" : ""}>FREIGHT</option>
           <option value="DROP_SHIPMENT" ${line.line_type === "DROP_SHIPMENT" ? "selected" : ""}>DROP_SHIPMENT</option>
           <option value="MISC" ${line.line_type === "MISC" ? "selected" : ""}>MISC</option>
         </select>
       </td>
-      <td><input class="line-input" data-field="part_number" type="text" value="${escapeAttribute(line.part_number || "")}" /></td>
-      <td><input class="line-input" data-field="description" type="text" value="${escapeAttribute(line.description || "")}" /></td>
-      <td><input class="line-input" data-field="origin" type="text" value="${escapeAttribute(line.origin || "")}" /></td>
-      <td><input class="line-input" data-field="quantity" type="number" step="0.01" value="${line.quantity ?? 0}" /></td>
-      <td><input class="line-input" data-field="unit_price" type="number" step="0.01" value="${line.unit_price ?? 0}" /></td>
-      <td><input class="line-input" data-field="discount_percent" type="number" step="0.01" value="${line.discount_percent ?? 0}" /></td>
-      <td><input class="line-input" data-field="net_unit_price" type="number" step="0.01" value="${line.net_unit_price ?? 0}" /></td>
-      <td><input class="line-input" data-field="line_total" type="number" step="0.01" value="${line.line_total ?? 0}" /></td>
+      <td><input class="line-input ${lineConfidenceClass(line.line_number, "part_number")}" data-field="part_number" type="text" value="${escapeAttribute(line.part_number || "")}" /></td>
+      <td><input class="line-input ${lineConfidenceClass(line.line_number, "description")}" data-field="description" type="text" value="${escapeAttribute(line.description || "")}" /></td>
+      <td><input class="line-input ${lineConfidenceClass(line.line_number, "origin")}" data-field="origin" type="text" value="${escapeAttribute(line.origin || "")}" /></td>
+      <td><input class="line-input ${lineConfidenceClass(line.line_number, "quantity")}" data-field="quantity" type="number" step="0.01" value="${line.quantity ?? 0}" /></td>
+      <td><input class="line-input ${lineConfidenceClass(line.line_number, "unit_price")}" data-field="unit_price" type="number" step="0.01" value="${line.unit_price ?? 0}" /></td>
+      <td><input class="line-input ${lineConfidenceClass(line.line_number, "discount_percent")}" data-field="discount_percent" type="number" step="0.01" value="${line.discount_percent ?? 0}" /></td>
+      <td><input class="line-input ${lineConfidenceClass(line.line_number, "net_unit_price")}" data-field="net_unit_price" type="number" step="0.01" value="${line.net_unit_price ?? 0}" /></td>
+      <td><input class="line-input ${lineConfidenceClass(line.line_number, "line_total")}" data-field="line_total" type="number" step="0.01" value="${line.line_total ?? 0}" /></td>
     </tr>
   `).join("");
 }
@@ -355,7 +407,10 @@ function getHeaderValues() {
     freight_charge: getNumericValue("freight_charge"),
     drop_ship_charge: getNumericValue("drop_ship_charge"),
     misc_charges: getNumericValue("misc_charges"),
-    total_invoice: getNumericValue("total_invoice")
+    total_invoice: getNumericValue("total_invoice"),
+    ap_notes: apNotes.value.trim(),
+    hold_reason: holdReason.value.trim(),
+    rejection_reason: rejectionReason.value.trim()
   };
 }
 
@@ -434,22 +489,112 @@ async function approveInvoice() {
   try {
     setBusyState(true, "Approving invoice...");
 
+    const workflowEvents = buildWorkflowAuditEvents(currentInvoice, {
+      ap_notes: apNotes.value.trim(),
+      hold_reason: "",
+      rejection_reason: "",
+      review_status: "approved"
+    });
+
     const { error } = await supabase
       .from("ap_invoices")
       .update({
         status: "approved",
         review_status: "approved",
-        approved_at: new Date().toISOString()
+        approved_at: new Date().toISOString(),
+        ap_notes: apNotes.value.trim(),
+        hold_reason: null,
+        rejection_reason: null
       })
       .eq("id", currentInvoice.id);
 
     if (error) throw error;
+
+    if (workflowEvents.length > 0) {
+      await supabase.from("ap_invoice_review_events").insert(workflowEvents);
+    }
 
     await loadInvoiceDetail();
     setBusyState(false, "Invoice approved.");
   } catch (error) {
     console.error("Approve failed:", error);
     setBusyState(false, `Approve failed: ${error.message}`);
+  }
+}
+
+async function putInvoiceOnHold() {
+  if (!currentInvoice) return;
+
+  try {
+    setBusyState(true, "Putting invoice on hold...");
+
+    const workflowEvents = buildWorkflowAuditEvents(currentInvoice, {
+      ap_notes: apNotes.value.trim(),
+      hold_reason: holdReason.value.trim(),
+      rejection_reason: rejectionReason.value.trim(),
+      review_status: "in_review"
+    });
+
+    const { error } = await supabase
+      .from("ap_invoices")
+      .update({
+        status: "needs_review",
+        review_status: "in_review",
+        ap_notes: apNotes.value.trim(),
+        hold_reason: holdReason.value.trim() || null,
+        rejection_reason: rejectionReason.value.trim() || null
+      })
+      .eq("id", currentInvoice.id);
+
+    if (error) throw error;
+
+    if (workflowEvents.length > 0) {
+      await supabase.from("ap_invoice_review_events").insert(workflowEvents);
+    }
+
+    await loadInvoiceDetail();
+    setBusyState(false, "Invoice placed on hold.");
+  } catch (error) {
+    console.error("Hold failed:", error);
+    setBusyState(false, `Hold failed: ${error.message}`);
+  }
+}
+
+async function rejectInvoice() {
+  if (!currentInvoice) return;
+
+  try {
+    setBusyState(true, "Rejecting invoice...");
+
+    const workflowEvents = buildWorkflowAuditEvents(currentInvoice, {
+      ap_notes: apNotes.value.trim(),
+      hold_reason: holdReason.value.trim(),
+      rejection_reason: rejectionReason.value.trim(),
+      review_status: "rejected"
+    });
+
+    const { error } = await supabase
+      .from("ap_invoices")
+      .update({
+        status: "needs_review",
+        review_status: "rejected",
+        ap_notes: apNotes.value.trim(),
+        hold_reason: holdReason.value.trim() || null,
+        rejection_reason: rejectionReason.value.trim() || null
+      })
+      .eq("id", currentInvoice.id);
+
+    if (error) throw error;
+
+    if (workflowEvents.length > 0) {
+      await supabase.from("ap_invoice_review_events").insert(workflowEvents);
+    }
+
+    await loadInvoiceDetail();
+    setBusyState(false, "Invoice rejected.");
+  } catch (error) {
+    console.error("Reject failed:", error);
+    setBusyState(false, `Reject failed: ${error.message}`);
   }
 }
 
@@ -464,11 +609,25 @@ async function markDuplicate() {
       .update({
         status: "duplicate",
         duplicate_status: "confirmed",
-        review_status: "in_review"
+        review_status: "in_review",
+        ap_notes: apNotes.value.trim(),
+        hold_reason: holdReason.value.trim() || null,
+        rejection_reason: rejectionReason.value.trim() || null
       })
       .eq("id", currentInvoice.id);
 
     if (error) throw error;
+
+    await supabase
+      .from("ap_invoice_review_events")
+      .insert([{
+        invoice_id: currentInvoice.id,
+        field_name: "duplicate_status",
+        old_value: currentInvoice.duplicate_status,
+        new_value: "confirmed",
+        changed_by: currentUser?.id || null,
+        change_reason: "Marked duplicate during AP review"
+      }]);
 
     await loadInvoiceDetail();
     setBusyState(false, "Invoice marked as duplicate.");
@@ -492,7 +651,10 @@ function buildHeaderAuditEvents(original, edited) {
     "freight_charge",
     "drop_ship_charge",
     "misc_charges",
-    "total_invoice"
+    "total_invoice",
+    "ap_notes",
+    "hold_reason",
+    "rejection_reason"
   ];
 
   const events = [];
@@ -514,6 +676,64 @@ function buildHeaderAuditEvents(original, edited) {
   }
 
   return events;
+}
+
+function buildWorkflowAuditEvents(original, edited) {
+  const fields = ["ap_notes", "hold_reason", "rejection_reason", "review_status"];
+  const events = [];
+
+  for (const field of fields) {
+    const oldValue = original[field] ?? null;
+    const newValue = edited[field] ?? null;
+
+    if (String(oldValue) !== String(newValue)) {
+      events.push({
+        invoice_id: original.id,
+        field_name: field,
+        old_value: oldValue,
+        new_value: newValue,
+        changed_by: currentUser?.id || null,
+        change_reason: "Workflow action during AP review"
+      });
+    }
+  }
+
+  return events;
+}
+
+function getHeaderConfidence(fieldName) {
+  const value = latestExtraction?.header_confidence?.[fieldName];
+  return typeof value === "number" ? value : null;
+}
+
+function confidenceClass(value) {
+  if (value == null) return "";
+  if (value < 0.6) return "field-low-confidence";
+  if (value < 0.8) return "field-medium-confidence";
+  return "";
+}
+
+function confidenceBadge(value) {
+  if (value == null) return `<span class="confidence-badge confidence-high">N/A</span>`;
+  if (value < 0.6) return `<span class="confidence-badge confidence-low">${Math.round(value * 100)}%</span>`;
+  if (value < 0.8) return `<span class="confidence-badge confidence-medium">${Math.round(value * 100)}%</span>`;
+  return `<span class="confidence-badge confidence-high">${Math.round(value * 100)}%</span>`;
+}
+
+function getLineFieldConfidence(lineNumber, fieldName) {
+  if (!Array.isArray(latestExtraction?.line_confidence)) return null;
+  const row = latestExtraction.line_confidence.find((item) => Number(item.line_number) === Number(lineNumber));
+  if (!row) return null;
+  const value = row[fieldName];
+  return typeof value === "number" ? value : null;
+}
+
+function lineConfidenceClass(lineNumber, fieldName) {
+  const value = getLineFieldConfidence(lineNumber, fieldName);
+  if (value == null) return "";
+  if (value < 0.6) return "line-low-confidence";
+  if (value < 0.8) return "line-medium-confidence";
+  return "";
 }
 
 function getInputValue(id) {
@@ -548,6 +768,8 @@ function getRowNumberValue(row, field) {
 function setBusyState(isBusy, message) {
   saveButton.disabled = isBusy;
   approveButton.disabled = isBusy;
+  holdButton.disabled = isBusy;
+  rejectButton.disabled = isBusy;
   duplicateButton.disabled = isBusy;
   reloadPdfButton.disabled = isBusy;
   reloadDebugButton.disabled = isBusy;

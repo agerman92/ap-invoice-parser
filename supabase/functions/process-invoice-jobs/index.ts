@@ -4,6 +4,13 @@ import { extractPdfLayout } from "../_shared/pdf-layout.ts";
 import { parseInvoiceWithRouter } from "../_shared/parser-router.ts";
 import { validateInvoiceExtraction } from "../_shared/validation.ts";
 import type { InvoiceExtraction } from "../_shared/invoice-schema.ts";
+import {
+  appendDuplicateFlag,
+  buildFailedParseFlags,
+  buildInvoiceExceptionFlags,
+  calculateReviewPriority,
+} from "../_shared/review-flags.ts";
+import { normalizeVendorName, resolveVendorIdentity } from "../_shared/vendor-master.ts";
 
 type JobRow = {
   id: number;
@@ -14,12 +21,6 @@ type JobRow = {
   max_attempts: number;
   payload: Record<string, unknown>;
 };
-
-function normalizeVendorName(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "");
-  return normalized || null;
-}
 
 function normalizeInvoiceNumber(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -63,10 +64,7 @@ function normalizeError(error: unknown): {
   if (typeof error === "object" && error !== null) {
     const obj = error as Record<string, unknown>;
     return {
-      message:
-        typeof obj.message === "string"
-          ? obj.message
-          : JSON.stringify(obj),
+      message: typeof obj.message === "string" ? obj.message : JSON.stringify(obj),
       details: typeof obj.details === "string" ? obj.details : undefined,
       hint: typeof obj.hint === "string" ? obj.hint : undefined,
       code: typeof obj.code === "string" ? obj.code : undefined,
@@ -145,15 +143,7 @@ async function markJobRetry(
 
   if (error) throw error;
 
-  if (nextStatus === "failed") {
-    await supabase
-      .from("ap_invoices")
-      .update({
-        status: "failed",
-        parse_error: errorMessage,
-      })
-      .eq("id", job.invoice_id);
-  }
+  return nextStatus;
 }
 
 async function detectDuplicate(
@@ -194,8 +184,12 @@ async function writeInvoiceDraft(
   invoiceId: string,
   parsed: InvoiceExtraction,
   warnings: unknown[],
+  headerConfidence: Record<string, number> | null = null,
+  lineConfidence: unknown[] | null = null,
 ) {
-  const vendorNormalized = normalizeVendorName(parsed.vendor);
+  const resolvedVendor = await resolveVendorIdentity(supabase, parsed.vendor);
+  const vendorNormalized =
+    resolvedVendor.normalizedName ?? normalizeVendorName(parsed.vendor);
   const invoiceNumberNormalized = normalizeInvoiceNumber(parsed.invoice_number);
   const invoiceDateParsed = safeDate(parsed.invoice_date);
 
@@ -206,12 +200,18 @@ async function writeInvoiceDraft(
     invoiceNumberNormalized,
   );
 
+  let exceptionFlags = buildInvoiceExceptionFlags(parsed, warnings);
+  exceptionFlags = appendDuplicateFlag(exceptionFlags, duplicate.duplicateStatus);
+  const reviewPriority = calculateReviewPriority(exceptionFlags);
+
   const { error: updateInvoiceError } = await supabase
     .from("ap_invoices")
     .update({
-      vendor: parsed.vendor || null,
+      vendor: resolvedVendor.canonicalName || parsed.vendor || null,
       vendor_raw_name: parsed.vendor || null,
       vendor_normalized: vendorNormalized,
+      vendor_id: resolvedVendor.vendorId,
+      vendor_match_method: resolvedVendor.matchMethod,
       invoice_number: parsed.invoice_number || null,
       invoice_number_normalized: invoiceNumberNormalized,
       invoice_date: parsed.invoice_date || null,
@@ -229,6 +229,9 @@ async function writeInvoiceDraft(
       warnings,
       duplicate_status: duplicate.duplicateStatus,
       duplicate_of_invoice_id: duplicate.duplicateOfInvoiceId,
+      exception_flags: exceptionFlags,
+      exception_count: exceptionFlags.length,
+      review_priority: reviewPriority,
       status: "needs_review",
       review_status: "unreviewed",
       parse_error: null,
@@ -264,6 +267,20 @@ async function writeInvoiceDraft(
       .insert(lineRows);
 
     if (insertLinesError) throw insertLinesError;
+  }
+
+  const { error: extractionConfidenceError } = await supabase
+    .from("ap_invoice_extractions")
+    .update({
+      header_confidence: headerConfidence,
+      line_confidence: lineConfidence,
+    })
+    .eq("invoice_id", invoiceId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (extractionConfidenceError) {
+    console.warn("Could not update extraction confidence:", extractionConfidenceError);
   }
 }
 
@@ -328,6 +345,11 @@ async function processOneJob(
     const parsed = routed.parsed;
     const warnings = validateInvoiceExtraction(parsed);
 
+    const headerConfidence =
+      (routed as { headerConfidence?: Record<string, number> }).headerConfidence ?? null;
+    const lineConfidence =
+      (routed as { lineConfidence?: unknown[] }).lineConfidence ?? null;
+
     const { error: extractionUpdateError } = await supabase
       .from("ap_invoice_extractions")
       .update({
@@ -336,13 +358,22 @@ async function processOneJob(
         structured_json: parsed,
         warnings,
         parser_version: routed.parserVersion,
+        header_confidence: headerConfidence,
+        line_confidence: lineConfidence,
         completed_at: new Date().toISOString(),
       })
       .eq("id", extractionId);
 
     if (extractionUpdateError) throw extractionUpdateError;
 
-    await writeInvoiceDraft(supabase, job.invoice_id, parsed, warnings);
+    await writeInvoiceDraft(
+      supabase,
+      job.invoice_id,
+      parsed,
+      warnings,
+      headerConfidence,
+      lineConfidence,
+    );
     await markJobCompleted(supabase, job.id);
 
     return true;
@@ -368,15 +399,30 @@ async function processOneJob(
         .eq("id", extractionId);
     }
 
-    await supabase
-      .from("ap_invoices")
-      .update({
-        status: "failed",
-        parse_error: errorMessage,
-      })
-      .eq("id", job.invoice_id);
+    const nextJobStatus = await markJobRetry(supabase, job, errorMessage);
 
-    await markJobRetry(supabase, job, errorMessage);
+    if (nextJobStatus === "failed") {
+      const failedFlags = buildFailedParseFlags(errorMessage);
+      await supabase
+        .from("ap_invoices")
+        .update({
+          status: "failed",
+          parse_error: errorMessage,
+          exception_flags: failedFlags,
+          exception_count: failedFlags.length,
+          review_priority: calculateReviewPriority(failedFlags),
+        })
+        .eq("id", job.invoice_id);
+    } else {
+      await supabase
+        .from("ap_invoices")
+        .update({
+          status: "queued",
+          parse_error: errorMessage,
+        })
+        .eq("id", job.invoice_id);
+    }
+
     return true;
   }
 }

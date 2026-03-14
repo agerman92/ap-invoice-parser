@@ -104,6 +104,10 @@
     .field-group label {
       font-weight: bold;
       font-size: 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
     }
 
     .field-group input,
@@ -117,12 +121,24 @@
       grid-column: 1 / -1;
     }
 
-    .warnings {
+    .warnings,
+    .workflow-box,
+    .exception-box {
       background: #fff7e6;
       border: 1px solid #f0d58c;
       padding: 12px;
       margin-bottom: 20px;
       border-radius: 6px;
+    }
+
+    .workflow-box {
+      background: #eef6ff;
+      border-color: #b8d5f5;
+    }
+
+    .exception-box {
+      background: #fff0f1;
+      border-color: #f3c2c7;
     }
 
     .small-note {
@@ -242,6 +258,67 @@
       display: none;
     }
 
+    .confidence-badge {
+      display: inline-block;
+      min-width: 58px;
+      text-align: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+
+    .confidence-high {
+      background: #e9f6eb;
+      color: #17663a;
+    }
+
+    .confidence-medium {
+      background: #fff7d6;
+      color: #7a6100;
+    }
+
+    .confidence-low {
+      background: #fde7e9;
+      color: #9b1c1c;
+    }
+
+    .field-low-confidence input,
+    .field-low-confidence textarea,
+    .field-low-confidence select {
+      border: 2px solid #d55;
+      background: #fff7f7;
+    }
+
+    .field-medium-confidence input,
+    .field-medium-confidence textarea,
+    .field-medium-confidence select {
+      border: 2px solid #f0c24b;
+      background: #fffdf5;
+    }
+
+    .line-low-confidence {
+      border: 2px solid #d55 !important;
+      background: #fff7f7 !important;
+    }
+
+    .line-medium-confidence {
+      border: 2px solid #f0c24b !important;
+      background: #fffdf5 !important;
+    }
+
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    textarea.workflow-input {
+      width: 100%;
+      min-height: 90px;
+      resize: vertical;
+    }
+
     @media (max-width: 1100px) {
       .page-layout {
         grid-template-columns: 1fr;
@@ -268,6 +345,8 @@
   <div class="actions">
     <button id="saveButton" type="button">Save Changes</button>
     <button id="approveButton" type="button">Approve Invoice</button>
+    <button id="holdButton" type="button">Put On Hold</button>
+    <button id="rejectButton" type="button">Reject Invoice</button>
     <button id="duplicateButton" type="button">Mark Duplicate</button>
     <button id="reloadPdfButton" type="button">Reload PDF</button>
   </div>
@@ -293,12 +372,33 @@
       <h2>Invoice Header</h2>
       <div id="invoiceHeaderForm" class="header-grid"></div>
 
+      <h2>Exceptions</h2>
+      <div id="invoiceExceptions" class="exception-box"></div>
+
       <h2>Warnings</h2>
       <div id="invoiceWarnings" class="warnings"></div>
 
+      <h2>Review Workflow</h2>
+      <div class="workflow-box">
+        <div class="workflow-grid">
+          <div class="field-group">
+            <label for="apNotes">AP Notes</label>
+            <textarea id="apNotes" class="workflow-input" placeholder="Add AP notes..."></textarea>
+          </div>
+          <div class="field-group">
+            <label for="holdReason">Hold Reason</label>
+            <textarea id="holdReason" class="workflow-input" placeholder="Reason invoice is on hold..."></textarea>
+          </div>
+          <div class="field-group">
+            <label for="rejectionReason">Rejection Reason</label>
+            <textarea id="rejectionReason" class="workflow-input" placeholder="Reason invoice is rejected..."></textarea>
+          </div>
+        </div>
+      </div>
+
       <h2>Invoice Lines</h2>
       <p class="small-note">
-        You can edit any line and save changes. Current version rewrites all lines for this invoice on save.
+        You can edit any line and save changes. Low-confidence fields are highlighted.
       </p>
 
       <div class="lines-section">
