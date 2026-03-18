@@ -43,20 +43,20 @@ export async function handler(event) {
     const basicAuth = Buffer.from(`${skyviaUser}:${skyviaPassword}`).toString("base64");
     const endpoint = skyviaUrl.endsWith("/execute") ? skyviaUrl : `${skyviaUrl}/execute`;
 
+    const sql = `
+      SELECT
+        DetailPONumber,
+        DetailItemName,
+        Quantity,
+        UnitCost,
+        DetailTotal
+      FROM [WinNetStarApp].[dbo].[IRBillDetail]
+      WHERE DetailPONumber = ${poNumber}
+      ORDER BY DetailItemName
+    `;
+
     const payload = {
-      sql: `
-        SELECT
-          DetailPONumber,
-          DetailItemName,
-          Quantity,
-          UnitCost,
-          DetailTotal
-        FROM [WinNetStarApp].[dbo].[IRBillDetail]
-        WHERE DetailPONumber = @poNumber
-      `,
-      parameters: {
-        poNumber: Number(poNumber)
-      }
+      sql
     };
 
     const skyviaResponse = await fetch(endpoint, {
@@ -78,12 +78,13 @@ export async function handler(event) {
     }
 
     return {
-      statusCode: skyviaResponse.ok ? 200 : skyviaResponse.status,
+      statusCode: skyviaResponse.ok ? 200 : 400,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         success: skyviaResponse.ok,
         poNumber: Number(poNumber),
         endpoint,
+        sql,
         data
       })
     };
