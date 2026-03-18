@@ -55,37 +55,49 @@ export async function handler(event) {
       ORDER BY DetailItemName
     `;
 
-    const payload = {
-      sql
-    };
-
     const skyviaResponse = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Basic ${basicAuth}`
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ sql })
     });
 
     const rawText = await skyviaResponse.text();
 
-    let data;
+    let parsed;
     try {
-      data = JSON.parse(rawText);
+      parsed = JSON.parse(rawText);
     } catch {
-      data = { raw: rawText };
+      parsed = null;
     }
 
+    if (!skyviaResponse.ok) {
+      return {
+        statusCode: 400,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          success: false,
+          poNumber: Number(poNumber),
+          endpoint,
+          sql,
+          error: parsed || rawText
+        })
+      };
+    }
+
+    const rows = parsed?.data || [];
+    const recordsCount = parsed?.recordsCount || rows.length;
+
     return {
-      statusCode: skyviaResponse.ok ? 200 : 400,
+      statusCode: 200,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        success: skyviaResponse.ok,
+        success: true,
         poNumber: Number(poNumber),
-        endpoint,
-        sql,
-        data
+        recordsCount,
+        rows
       })
     };
   } catch (err) {
