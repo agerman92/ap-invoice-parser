@@ -41,10 +41,23 @@ export async function handler(event) {
     }
 
     const basicAuth = Buffer.from(`${skyviaUser}:${skyviaPassword}`).toString("base64");
+    const endpoint = skyviaUrl.endsWith("/execute") ? skyviaUrl : `${skyviaUrl}/execute`;
 
-    const endpoint = skyviaUrl.endsWith("/execute")
-      ? skyviaUrl
-      : `${skyviaUrl}/execute`;
+    const payload = {
+      sql: `
+        SELECT
+          DetailPONumber,
+          DetailItemName,
+          Quantity,
+          UnitCost,
+          DetailTotal
+        FROM [WinNetStarApp].[dbo].[IRBillDetail]
+        WHERE DetailPONumber = @poNumber
+      `,
+      parameters: {
+        poNumber: Number(poNumber)
+      }
+    };
 
     const skyviaResponse = await fetch(endpoint, {
       method: "POST",
@@ -52,21 +65,7 @@ export async function handler(event) {
         "Content-Type": "application/json",
         "Authorization": `Basic ${basicAuth}`
       },
-      body: JSON.stringify({
-        query: `
-          SELECT
-            DetailPONumber,
-            DetailItemName,
-            Quantity,
-            UnitCost,
-            DetailTotal
-          FROM [WinNetStarApp].[dbo].[IRBillDetail]
-          WHERE DetailPONumber = @poNumber
-        `,
-        parameters: {
-          poNumber: Number(poNumber)
-        }
-      })
+      body: JSON.stringify(payload)
     });
 
     const rawText = await skyviaResponse.text();
