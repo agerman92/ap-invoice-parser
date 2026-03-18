@@ -41,7 +41,10 @@ export async function handler(event) {
     }
 
     const basicAuth = Buffer.from(`${skyviaUser}:${skyviaPassword}`).toString("base64");
-    const endpoint = skyviaUrl.endsWith("/execute") ? skyviaUrl : `${skyviaUrl}/execute`;
+
+    const endpoint = skyviaUrl.endsWith("/execute")
+      ? skyviaUrl
+      : `${skyviaUrl}/execute`;
 
     const skyviaResponse = await fetch(endpoint, {
       method: "POST",
@@ -59,7 +62,6 @@ export async function handler(event) {
             DetailTotal
           FROM [WinNetStarApp].[dbo].[IRBillDetail]
           WHERE DetailPONumber = @poNumber
-          ORDER BY DetailItemName
         `,
         parameters: {
           poNumber: Number(poNumber)
