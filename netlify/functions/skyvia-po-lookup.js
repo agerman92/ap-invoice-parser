@@ -46,7 +46,11 @@ export async function handler(event) {
     const sql = `
       SELECT
         DetailPONumber,
-        DetailItemName,
+        CASE
+          WHEN LEN(DetailItemName) > 4
+          THEN LEFT(DetailItemName, LEN(DetailItemName) - 4)
+          ELSE DetailItemName
+        END AS DetailItemName,
         Quantity,
         UnitCost,
         DetailTotal
