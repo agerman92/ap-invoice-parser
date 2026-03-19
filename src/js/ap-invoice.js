@@ -225,29 +225,29 @@ function normalizePartNumber(value) {
 function findPOLineMatch(invoiceLine, poLines) {
   const invoicePart = normalizePartNumber(invoiceLine.part_number);
 
-  if (invoicePart) {
-    const exactPartMatch = poLines.find((poLine) => {
-      return normalizePartNumber(poLine.DetailItemName) === invoicePart;
-    });
-
-    if (exactPartMatch) return exactPartMatch;
+  if (!invoicePart) {
+    return null;
   }
 
-  const invoiceDescription = String(invoiceLine.description || "").trim().toUpperCase();
-
-  if (invoiceDescription) {
-    const descriptionMatch = poLines.find((poLine) => {
-      return String(poLine.DetailItemName || "").trim().toUpperCase() === invoiceDescription;
-    });
-
-    if (descriptionMatch) return descriptionMatch;
-  }
-
-  return null;
+  return poLines.find((poLine) => {
+    return normalizePartNumber(poLine.DetailItemName) === invoicePart;
+  }) || null;
 }
 
 function buildPOLineMatches(invoiceLines, poLines) {
   return invoiceLines.map((invoiceLine) => {
+    const lineType = String(invoiceLine.line_type || "PART").toUpperCase();
+
+    if (lineType !== "PART") {
+      return {
+        status: "not_applicable",
+        poLine: null,
+        qtyMatch: true,
+        priceMatch: true,
+        totalMatch: true
+      };
+    }
+
     const matchedPOLine = findPOLineMatch(invoiceLine, poLines);
 
     if (!matchedPOLine) {
@@ -284,13 +284,21 @@ function buildPOLineMatches(invoiceLines, poLines) {
 
 function summarizePOLineMatches(matches) {
   const summary = {
-    total: matches.length,
+    total: 0,
     matched: 0,
     mismatched: 0,
-    missing: 0
+    missing: 0,
+    notApplicable: 0
   };
 
   for (const match of matches) {
+    if (match.status === "not_applicable") {
+      summary.notApplicable += 1;
+      continue;
+    }
+
+    summary.total += 1;
+
     if (match.status === "match") summary.matched += 1;
     else if (match.status === "mismatch") summary.mismatched += 1;
     else if (match.status === "missing") summary.missing += 1;
@@ -302,6 +310,10 @@ function summarizePOLineMatches(matches) {
 function getReconBadge(match) {
   if (!match) {
     return `<div style="margin-top:6px;font-size:11px;color:#94a3b8;">PO recon: not run</div>`;
+  }
+
+  if (match.status === "not_applicable") {
+    return `<div style="margin-top:6px;font-size:11px;color:#94a3b8;font-weight:700;">PO recon: N/A</div>`;
   }
 
   if (match.status === "match") {
@@ -637,9 +649,9 @@ function renderFinancialChecks() {
     const poStatusText = poReconError
       ? `Lookup failed: ${poReconError}`
       : summary.total === 0
-        ? "No invoice lines to reconcile"
+        ? "No part lines to reconcile"
         : summary.mismatched === 0 && summary.missing === 0
-          ? "All matched"
+          ? "All part lines matched"
           : "Review mismatches";
 
     poReconCard = `
@@ -647,10 +659,11 @@ function renderFinancialChecks() {
         <div class="financial-title">PO Reconciliation</div>
         <div class="financial-row"><span>PO number</span><span>${escapeHtml(String(currentInvoice?.po_number || ""))}</span></div>
         <div class="financial-row"><span>PO lines returned</span><span>${currentPOLines.length}</span></div>
-        <div class="financial-row"><span>Invoice lines</span><span>${summary.total}</span></div>
+        <div class="financial-row"><span>Part lines reviewed</span><span>${summary.total}</span></div>
         <div class="financial-row"><span>Matched</span><span class="financial-ok">${summary.matched}</span></div>
         <div class="financial-row"><span>Mismatched</span><span class="${summary.mismatched ? "financial-warn" : "financial-ok"}">${summary.mismatched}</span></div>
         <div class="financial-row"><span>Missing PO match</span><span class="${summary.missing ? "financial-warn" : "financial-ok"}">${summary.missing}</span></div>
+        <div class="financial-row"><span>Non-part lines</span><span>${summary.notApplicable}</span></div>
         <div class="financial-row"><span>Status</span><span class="${poStatusClass}">${escapeHtml(poStatusText)}</span></div>
       </div>
     `;
