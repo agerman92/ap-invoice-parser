@@ -25,29 +25,38 @@
       box-sizing: border-box;
     }
 
+    html,
+    body {
+      height: 100%;
+    }
+
     body {
       font-family: Arial, sans-serif;
       margin: 0;
-      padding: 18px;
+      padding: 14px;
       background: linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
       color: var(--text);
+      min-height: 100vh;
     }
 
     a {
       color: var(--blue);
     }
 
-    h1, h2, h3 {
+    h1,
+    h2,
+    h3 {
       margin-top: 0;
     }
 
     .page {
-      max-width: 1650px;
-      margin: 0 auto;
+      width: 100%;
+      max-width: none;
+      margin: 0;
     }
 
     .top-bar {
-      margin-bottom: 14px;
+      margin-bottom: 12px;
     }
 
     .top-nav-row {
@@ -70,7 +79,7 @@
     }
 
     .status-bar {
-      margin: 12px 0;
+      margin: 10px 0;
       font-weight: bold;
       color: #dce8f6;
     }
@@ -109,7 +118,7 @@
     .actions {
       display: flex;
       gap: 10px;
-      margin: 16px 0 20px 0;
+      margin: 14px 0 18px 0;
       flex-wrap: wrap;
       position: sticky;
       top: 0;
@@ -136,10 +145,10 @@
 
     .page-layout {
       display: grid;
-      grid-template-columns: 48% 52%;
-      gap: 18px;
+      grid-template-columns: minmax(740px, 48vw) minmax(980px, 1fr);
+      gap: 16px;
       align-items: start;
-      min-height: calc(100vh - 140px);
+      min-height: calc(100vh - 120px);
     }
 
     .pdf-panel,
@@ -188,7 +197,8 @@
 
     .pdf-frame-wrap {
       width: 100%;
-      height: calc(100vh - 245px);
+      height: calc(100vh - 230px);
+      min-height: 760px;
       border: 1px solid var(--border);
       border-radius: 14px;
       overflow: hidden;
@@ -209,7 +219,7 @@
 
     .header-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(240px, 1fr));
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
       gap: 14px 16px;
       margin-bottom: 20px;
     }
@@ -253,7 +263,7 @@
     .financial-box {
       border-radius: 16px;
       padding: 14px;
-      margin-bottom: 20px;
+      margin-bottom: 18px;
       border: 1px solid var(--border);
     }
 
@@ -275,7 +285,7 @@
 
     .financial-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(240px, 1fr));
+      grid-template-columns: repeat(3, minmax(240px, 1fr));
       gap: 14px 16px;
     }
 
@@ -316,21 +326,23 @@
     }
 
     .lines-section {
-      overflow-x: auto;
+      overflow: auto;
       border: 1px solid var(--border);
       border-radius: 16px;
       background: rgba(255,255,255,0.02);
       padding: 8px;
+      max-width: 100%;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 0;
-      min-width: 1100px;
+      min-width: 1750px;
     }
 
-    th, td {
+    th,
+    td {
       border: 1px solid var(--border);
       padding: 8px;
       vertical-align: top;
@@ -343,6 +355,7 @@
       font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0.04em;
+      white-space: nowrap;
     }
 
     td {
@@ -358,6 +371,20 @@
       border: 1px solid var(--border);
       background: #0f1828;
       color: var(--text);
+      min-height: 40px;
+    }
+
+    .line-readonly {
+      display: flex;
+      align-items: center;
+      min-height: 40px;
+      padding: 8px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0b1322;
+      color: var(--text);
+      font-size: 13px;
+      white-space: nowrap;
     }
 
     .line-duplicate td {
@@ -365,7 +392,7 @@
     }
 
     .debug-panel {
-      margin-top: 24px;
+      margin-top: 22px;
       overflow: hidden;
     }
 
@@ -382,7 +409,7 @@
 
     .debug-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(240px, 1fr));
+      grid-template-columns: repeat(3, minmax(220px, 1fr));
       gap: 14px 16px;
       padding: 16px;
     }
@@ -503,17 +530,39 @@
 
     .workflow-grid {
       display: grid;
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(3, minmax(220px, 1fr));
       gap: 12px;
     }
 
     textarea.workflow-input {
       width: 100%;
-      min-height: 90px;
+      min-height: 100px;
       resize: vertical;
     }
 
-    @media (max-width: 1100px) {
+    @media (max-width: 1680px) {
+      .page-layout {
+        grid-template-columns: minmax(620px, 44vw) minmax(840px, 1fr);
+      }
+
+      .header-grid {
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+      }
+
+      .financial-grid {
+        grid-template-columns: repeat(2, minmax(240px, 1fr));
+      }
+
+      .debug-grid {
+        grid-template-columns: repeat(2, minmax(220px, 1fr));
+      }
+
+      .workflow-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 1200px) {
       .page-layout {
         grid-template-columns: 1fr;
       }
@@ -527,7 +576,8 @@
       }
 
       .pdf-frame-wrap {
-        height: 500px;
+        height: 650px;
+        min-height: 650px;
       }
 
       .debug-grid,
@@ -628,7 +678,7 @@
 
         <h2>Invoice Lines</h2>
         <p class="small-note">
-          You can edit any line and save changes. Low-confidence fields are highlighted. Duplicate part numbers are highlighted in yellow. PO reconciliation status will display inline for matched, mismatched, or missing PO lines.
+          This view is widened for full-screen AP review. It shows invoice pricing side-by-side with RIMSS pricing and total-line variances so reviewers can see exactly how far off each part line is.
         </p>
 
         <div class="lines-section">
@@ -641,10 +691,14 @@
                 <th>Description</th>
                 <th>Origin</th>
                 <th>Qty</th>
-                <th>Unit Price</th>
+                <th>Inv Unit</th>
+                <th>RIMSS Unit</th>
+                <th>Unit Var</th>
                 <th>Discount %</th>
-                <th>Net Unit Price</th>
-                <th>Line Total</th>
+                <th>Net Unit</th>
+                <th>Inv Line Total</th>
+                <th>RIMSS Line Total</th>
+                <th>Total Var</th>
               </tr>
             </thead>
             <tbody id="lineTableBody"></tbody>
