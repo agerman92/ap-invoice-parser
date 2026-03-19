@@ -42,6 +42,9 @@ let currentLines = [];
 let currentUser = null;
 let latestExtraction = null;
 let invoiceNavigationList = [];
+let currentPOLines = [];
+let currentPOMatches = [];
+let poReconError = "";
 
 async function initPage() {
   try {
@@ -160,6 +163,14 @@ async function loadInvoiceDetail() {
 
   currentInvoice = invoice;
   currentLines = lines || [];
+  currentPOLines = [];
+  currentPOMatches = [];
+  poReconError = "";
+
+  if (String(invoice.po_number || "").trim()) {
+    currentPOLines = await fetchPOLines(invoice.po_number);
+    currentPOMatches = buildPOLineMatches(currentLines, currentPOLines);
+  }
 
   renderWorkflowValues(invoice);
   renderWarnings(invoice.warnings);
@@ -174,6 +185,139 @@ async function loadInvoiceDetail() {
   updateNavigationButtons();
 
   statusMessage.textContent = "Invoice loaded.";
+}
+
+async function fetchPOLines(poNumber) {
+  try {
+    const response = await fetch("/.netlify/functions/skyvia-po-lookup", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ poNumber: String(poNumber).trim() })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result?.success) {
+      poReconError = result?.error || result?.data?.Message || "PO lookup failed.";
+      console.error("PO lookup failed:", result);
+      return [];
+    }
+
+    poReconError = "";
+    return Array.isArray(result.rows) ? result.rows : [];
+  } catch (error) {
+    poReconError = error.message || "PO lookup failed.";
+    console.error("PO fetch error:", error);
+    return [];
+  }
+}
+
+function normalizePartNumber(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9\-./]/g, "");
+}
+
+function findPOLineMatch(invoiceLine, poLines) {
+  const invoicePart = normalizePartNumber(invoiceLine.part_number);
+
+  if (invoicePart) {
+    const exactPartMatch = poLines.find((poLine) => {
+      return normalizePartNumber(poLine.DetailItemName) === invoicePart;
+    });
+
+    if (exactPartMatch) return exactPartMatch;
+  }
+
+  const invoiceDescription = String(invoiceLine.description || "").trim().toUpperCase();
+
+  if (invoiceDescription) {
+    const descriptionMatch = poLines.find((poLine) => {
+      return String(poLine.DetailItemName || "").trim().toUpperCase() === invoiceDescription;
+    });
+
+    if (descriptionMatch) return descriptionMatch;
+  }
+
+  return null;
+}
+
+function buildPOLineMatches(invoiceLines, poLines) {
+  return invoiceLines.map((invoiceLine) => {
+    const matchedPOLine = findPOLineMatch(invoiceLine, poLines);
+
+    if (!matchedPOLine) {
+      return {
+        status: "missing",
+        poLine: null,
+        qtyMatch: false,
+        priceMatch: false,
+        totalMatch: false
+      };
+    }
+
+    const invoiceQty = Number(invoiceLine.quantity || 0);
+    const invoiceUnitPrice = Number(invoiceLine.unit_price || invoiceLine.net_unit_price || 0);
+    const invoiceLineTotal = Number(invoiceLine.line_total || 0);
+
+    const poQty = Number(matchedPOLine.Quantity || 0);
+    const poUnitCost = Number(matchedPOLine.UnitCost || 0);
+    const poLineTotal = Number(matchedPOLine.DetailTotal || 0);
+
+    const qtyMatch = Math.abs(invoiceQty - poQty) <= 0.01;
+    const priceMatch = Math.abs(invoiceUnitPrice - poUnitCost) <= 0.02;
+    const totalMatch = Math.abs(invoiceLineTotal - poLineTotal) <= 0.05;
+
+    return {
+      status: qtyMatch && priceMatch && totalMatch ? "match" : "mismatch",
+      poLine: matchedPOLine,
+      qtyMatch,
+      priceMatch,
+      totalMatch
+    };
+  });
+}
+
+function summarizePOLineMatches(matches) {
+  const summary = {
+    total: matches.length,
+    matched: 0,
+    mismatched: 0,
+    missing: 0
+  };
+
+  for (const match of matches) {
+    if (match.status === "match") summary.matched += 1;
+    else if (match.status === "mismatch") summary.mismatched += 1;
+    else if (match.status === "missing") summary.missing += 1;
+  }
+
+  return summary;
+}
+
+function getReconBadge(match) {
+  if (!match) {
+    return `<div style="margin-top:6px;font-size:11px;color:#94a3b8;">PO recon: not run</div>`;
+  }
+
+  if (match.status === "match") {
+    return `<div style="margin-top:6px;font-size:11px;color:#22c55e;font-weight:700;">PO recon: MATCH</div>`;
+  }
+
+  if (match.status === "missing") {
+    return `<div style="margin-top:6px;font-size:11px;color:#ef4444;font-weight:700;">PO recon: NO PO LINE MATCH</div>`;
+  }
+
+  const issues = [];
+  if (!match.qtyMatch) issues.push("qty");
+  if (!match.priceMatch) issues.push("price");
+  if (!match.totalMatch) issues.push("total");
+
+  return `<div style="margin-top:6px;font-size:11px;color:#f59e0b;font-weight:700;">PO recon: MISMATCH (${issues.join(", ")})</div>`;
 }
 
 async function loadPdfPreview(invoice) {
@@ -430,6 +574,8 @@ function renderLines(lines) {
   lineTableBody.innerHTML = lines.map((line, index) => {
     const duplicateKey = String(line.part_number || "").trim().toUpperCase();
     const duplicateClass = duplicateParts.has(duplicateKey) ? "line-duplicate" : "";
+    const poMatch = currentPOMatches[index] || null;
+    const reconBadge = getReconBadge(poMatch);
 
     return `
       <tr data-line-index="${index}" class="${duplicateClass}">
@@ -443,7 +589,10 @@ function renderLines(lines) {
           </select>
         </td>
         <td><input class="line-input ${lineConfidenceClass(line.line_number, "part_number")}" data-field="part_number" type="text" value="${escapeAttribute(line.part_number || "")}" /></td>
-        <td><input class="line-input ${lineConfidenceClass(line.line_number, "description")}" data-field="description" type="text" value="${escapeAttribute(line.description || "")}" /></td>
+        <td>
+          <input class="line-input ${lineConfidenceClass(line.line_number, "description")}" data-field="description" type="text" value="${escapeAttribute(line.description || "")}" />
+          ${reconBadge}
+        </td>
         <td><input class="line-input ${lineConfidenceClass(line.line_number, "origin")}" data-field="origin" type="text" value="${escapeAttribute(line.origin || "")}" /></td>
         <td><input class="line-input ${lineConfidenceClass(line.line_number, "quantity")}" data-field="quantity" type="number" step="0.01" value="${line.quantity ?? 0}" /></td>
         <td><input class="line-input ${lineConfidenceClass(line.line_number, "unit_price")}" data-field="unit_price" type="number" step="0.01" value="${line.unit_price ?? 0}" /></td>
@@ -474,6 +623,39 @@ function renderFinancialChecks() {
   const headerStatusClass = Math.abs(headerDifference) <= 0.05 ? "financial-ok" : "financial-warn";
   const lineStatusClass = Math.abs(lineDifference) <= 0.05 ? "financial-ok" : "financial-warn";
 
+  let poReconCard = `
+    <div class="financial-card">
+      <div class="financial-title">PO Reconciliation</div>
+      <div class="financial-row"><span>PO number</span><span>${escapeHtml(String(currentInvoice?.po_number || "")) || "—"}</span></div>
+      <div class="financial-row"><span>Status</span><span class="financial-warn">No PO number on invoice</span></div>
+    </div>
+  `;
+
+  if (String(currentInvoice?.po_number || "").trim()) {
+    const summary = summarizePOLineMatches(currentPOMatches);
+    const poStatusClass = summary.mismatched === 0 && summary.missing === 0 ? "financial-ok" : "financial-warn";
+    const poStatusText = poReconError
+      ? `Lookup failed: ${poReconError}`
+      : summary.total === 0
+        ? "No invoice lines to reconcile"
+        : summary.mismatched === 0 && summary.missing === 0
+          ? "All matched"
+          : "Review mismatches";
+
+    poReconCard = `
+      <div class="financial-card">
+        <div class="financial-title">PO Reconciliation</div>
+        <div class="financial-row"><span>PO number</span><span>${escapeHtml(String(currentInvoice?.po_number || ""))}</span></div>
+        <div class="financial-row"><span>PO lines returned</span><span>${currentPOLines.length}</span></div>
+        <div class="financial-row"><span>Invoice lines</span><span>${summary.total}</span></div>
+        <div class="financial-row"><span>Matched</span><span class="financial-ok">${summary.matched}</span></div>
+        <div class="financial-row"><span>Mismatched</span><span class="${summary.mismatched ? "financial-warn" : "financial-ok"}">${summary.mismatched}</span></div>
+        <div class="financial-row"><span>Missing PO match</span><span class="${summary.missing ? "financial-warn" : "financial-ok"}">${summary.missing}</span></div>
+        <div class="financial-row"><span>Status</span><span class="${poStatusClass}">${escapeHtml(poStatusText)}</span></div>
+      </div>
+    `;
+  }
+
   financialChecks.innerHTML = `
     <div class="financial-grid">
       <div class="financial-card">
@@ -491,6 +673,8 @@ function renderFinancialChecks() {
         <div class="financial-row"><span>Difference</span><span class="${lineStatusClass}">${formatCurrency(lineDifference)}</span></div>
         <div class="financial-row"><span>Status</span><span class="${lineStatusClass}">${Math.abs(lineDifference) <= 0.05 ? "Lines match invoice" : "Lines differ from invoice"}</span></div>
       </div>
+
+      ${poReconCard}
     </div>
   `;
 }
