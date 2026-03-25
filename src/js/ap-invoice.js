@@ -237,6 +237,9 @@ function findPOLineMatch(invoiceLine, poLines) {
 function buildPOLineMatches(invoiceLines, poLines) {
   return invoiceLines.map((invoiceLine) => {
     const lineType = String(invoiceLine.line_type || "PART").toUpperCase();
+    const invoiceQty = Number(invoiceLine.quantity || 0);
+    const invoiceUnitPrice = Number(invoiceLine.net_unit_price || invoiceLine.unit_price || 0);
+    const invoiceLineTotal = Number(invoiceLine.line_total || 0);
 
     if (lineType !== "PART") {
       return {
@@ -244,7 +247,13 @@ function buildPOLineMatches(invoiceLines, poLines) {
         poLine: null,
         qtyMatch: true,
         priceMatch: true,
-        totalMatch: true
+        totalMatch: true,
+        invoiceUnitPrice,
+        invoiceLineTotal,
+        poUnitCost: null,
+        poLineTotal: null,
+        unitVariance: null,
+        totalVariance: null
       };
     }
 
@@ -256,13 +265,15 @@ function buildPOLineMatches(invoiceLines, poLines) {
         poLine: null,
         qtyMatch: false,
         priceMatch: false,
-        totalMatch: false
+        totalMatch: false,
+        invoiceUnitPrice,
+        invoiceLineTotal,
+        poUnitCost: null,
+        poLineTotal: null,
+        unitVariance: null,
+        totalVariance: null
       };
     }
-
-    const invoiceQty = Number(invoiceLine.quantity || 0);
-    const invoiceUnitPrice = Number(invoiceLine.unit_price || invoiceLine.net_unit_price || 0);
-    const invoiceLineTotal = Number(invoiceLine.line_total || 0);
 
     const poQty = Number(matchedPOLine.Quantity || 0);
     const poUnitCost = Number(matchedPOLine.UnitCost || 0);
@@ -277,7 +288,13 @@ function buildPOLineMatches(invoiceLines, poLines) {
       poLine: matchedPOLine,
       qtyMatch,
       priceMatch,
-      totalMatch
+      totalMatch,
+      invoiceUnitPrice,
+      invoiceLineTotal,
+      poUnitCost,
+      poLineTotal,
+      unitVariance: roundCurrency(invoiceUnitPrice - poUnitCost),
+      totalVariance: roundCurrency(invoiceLineTotal - poLineTotal)
     };
   });
 }
@@ -330,6 +347,76 @@ function getReconBadge(match) {
   if (!match.totalMatch) issues.push("total");
 
   return `<div style="margin-top:6px;font-size:11px;color:#f59e0b;font-weight:700;">PO recon: MISMATCH (${issues.join(", ")})</div>`;
+}
+
+function formatReconCurrency(value) {
+  if (value == null || !Number.isFinite(Number(value))) return "—";
+  return formatCurrency(Number(value));
+}
+
+function formatVarianceCell(value, tolerance) {
+  if (value == null || !Number.isFinite(Number(value))) {
+    return `<div class="line-readonly">—</div>`;
+  }
+
+  const numericValue = Number(value);
+  const isWithinTolerance = Math.abs(numericValue) <= tolerance;
+  const className = isWithinTolerance ? "financial-ok" : "financial-warn";
+
+  return `
+    <div class="line-readonly ${className}" style="font-weight:700;">
+      ${formatCurrency(numericValue)}
+    </div>
+  `;
+}
+
+function renderLines(lines) {
+  if (!lines.length) {
+    lineTableBody.innerHTML = `
+      <tr>
+        <td colspan="14">No lines found.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  const duplicateParts = getDuplicatePartNumbers(lines);
+
+  lineTableBody.innerHTML = lines.map((line, index) => {
+    const duplicateKey = String(line.part_number || "").trim().toUpperCase();
+    const duplicateClass = duplicateParts.has(duplicateKey) ? "line-duplicate" : "";
+    const poMatch = currentPOMatches[index] || null;
+    const reconBadge = getReconBadge(poMatch);
+
+    return `
+      <tr data-line-index="${index}" class="${duplicateClass}">
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "line_number")}" data-field="line_number" type="number" value="${line.line_number ?? index + 1}" /></td>
+        <td>
+          <select class="line-input ${lineConfidenceClass(line.line_number, "line_type")}" data-field="line_type">
+            <option value="PART" ${line.line_type === "PART" ? "selected" : ""}>PART</option>
+            <option value="FREIGHT" ${line.line_type === "FREIGHT" ? "selected" : ""}>FREIGHT</option>
+            <option value="DROP_SHIPMENT" ${line.line_type === "DROP_SHIPMENT" ? "selected" : ""}>DROP_SHIPMENT</option>
+            <option value="MISC" ${line.line_type === "MISC" ? "selected" : ""}>MISC</option>
+          </select>
+        </td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "part_number")}" data-field="part_number" type="text" value="${escapeAttribute(line.part_number || "")}" /></td>
+        <td>
+          <input class="line-input ${lineConfidenceClass(line.line_number, "description")}" data-field="description" type="text" value="${escapeAttribute(line.description || "")}" />
+          ${reconBadge}
+        </td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "origin")}" data-field="origin" type="text" value="${escapeAttribute(line.origin || "")}" /></td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "quantity")}" data-field="quantity" type="number" step="0.01" value="${line.quantity ?? 0}" /></td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "unit_price")}" data-field="unit_price" type="number" step="0.01" value="${line.unit_price ?? 0}" /></td>
+        <td><div class="line-readonly">${formatReconCurrency(poMatch?.poUnitCost)}</div></td>
+        <td>${formatVarianceCell(poMatch?.unitVariance, 0.02)}</td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "discount_percent")}" data-field="discount_percent" type="number" step="0.01" value="${line.discount_percent ?? 0}" /></td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "net_unit_price")}" data-field="net_unit_price" type="number" step="0.01" value="${line.net_unit_price ?? 0}" /></td>
+        <td><input class="line-input ${lineConfidenceClass(line.line_number, "line_total")}" data-field="line_total" type="number" step="0.01" value="${line.line_total ?? 0}" /></td>
+        <td><div class="line-readonly">${formatReconCurrency(poMatch?.poLineTotal)}</div></td>
+        <td>${formatVarianceCell(poMatch?.totalVariance, 0.05)}</td>
+      </tr>
+    `;
+  }).join("");
 }
 
 async function loadPdfPreview(invoice) {
@@ -552,68 +639,6 @@ function renderExceptions(flags, priority) {
       `).join("")}
     </ul>
   `;
-}
-
-function getDuplicatePartNumbers(lines) {
-  const counts = new Map();
-
-  for (const line of lines) {
-    const key = String(line.part_number || "").trim().toUpperCase();
-    if (!key || key === "NULL") continue;
-    counts.set(key, (counts.get(key) || 0) + 1);
-  }
-
-  const duplicates = new Set();
-  for (const [key, count] of counts.entries()) {
-    if (count > 1) duplicates.add(key);
-  }
-
-  return duplicates;
-}
-
-function renderLines(lines) {
-  if (!lines.length) {
-    lineTableBody.innerHTML = `
-      <tr>
-        <td colspan="10">No lines found.</td>
-      </tr>
-    `;
-    return;
-  }
-
-  const duplicateParts = getDuplicatePartNumbers(lines);
-
-  lineTableBody.innerHTML = lines.map((line, index) => {
-    const duplicateKey = String(line.part_number || "").trim().toUpperCase();
-    const duplicateClass = duplicateParts.has(duplicateKey) ? "line-duplicate" : "";
-    const poMatch = currentPOMatches[index] || null;
-    const reconBadge = getReconBadge(poMatch);
-
-    return `
-      <tr data-line-index="${index}" class="${duplicateClass}">
-        <td><input class="line-input ${lineConfidenceClass(line.line_number, "line_number")}" data-field="line_number" type="number" value="${line.line_number ?? index + 1}" /></td>
-        <td>
-          <select class="line-input ${lineConfidenceClass(line.line_number, "line_type")}" data-field="line_type">
-            <option value="PART" ${line.line_type === "PART" ? "selected" : ""}>PART</option>
-            <option value="FREIGHT" ${line.line_type === "FREIGHT" ? "selected" : ""}>FREIGHT</option>
-            <option value="DROP_SHIPMENT" ${line.line_type === "DROP_SHIPMENT" ? "selected" : ""}>DROP_SHIPMENT</option>
-            <option value="MISC" ${line.line_type === "MISC" ? "selected" : ""}>MISC</option>
-          </select>
-        </td>
-        <td><input class="line-input ${lineConfidenceClass(line.line_number, "part_number")}" data-field="part_number" type="text" value="${escapeAttribute(line.part_number || "")}" /></td>
-        <td>
-          <input class="line-input ${lineConfidenceClass(line.line_number, "description")}" data-field="description" type="text" value="${escapeAttribute(line.description || "")}" />
-          ${reconBadge}
-        </td>
-        <td><input class="line-input ${lineConfidenceClass(line.line_number, "origin")}" data-field="origin" type="text" value="${escapeAttribute(line.origin || "")}" /></td>
-        <td><input class="line-input ${lineConfidenceClass(line.line_number, "quantity")}" data-field="quantity" type="number" step="0.01" value="${line.quantity ?? 0}" /></td>
-        <td><input class="line-input ${lineConfidenceClass(line.line_number, "unit_price")}" data-field="unit_price" type="number" step="0.01" value="${line.unit_price ?? 0}" /></td>
-        <td><input class="line-input ${lineConfidenceClass(line.line_number, "discount_percent")}" data-field="discount_percent" type="number" step="0.01" value="${line.discount_percent ?? 0}" /></td>
-        <td><input class="line-input ${lineConfidenceClass(line.line_number, "net_unit_price")}" data-field="net_unit_price" type="number" step="0.01" value="${line.net_unit_price ?? 0}" /></td>
-        <td><input class="line-input ${lineConfidenceClass(line.line_number, "line_total")}" data-field="line_total" type="number" step="0.01" value="${line.line_total ?? 0}" /></td>
-      </tr>
-    `;
-  }).join("");
 }
 
 function renderFinancialChecks() {
