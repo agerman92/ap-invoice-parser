@@ -567,11 +567,67 @@
       50%      { box-shadow: 0 0 0 2px rgba(239,68,68,0.2); }
     }
 
+    /* ── Pagination ── */
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .page-info {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .page-btns {
+      display: flex;
+      gap: 6px;
+    }
+
+    .page-btn {
+      padding: 6px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .page-btn:hover:not(:disabled) { background: #273449; }
+    .page-btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* ── Mobile ── */
     @media (max-width: 900px) {
-      body { padding: 14px; }
-      .hero h1 { font-size: 28px; }
-      .stat-pills { gap: 8px; }
-      .stat-pill-count { font-size: 16px; }
+      body { padding: 12px; }
+      .hero h1 { font-size: 26px; }
+      .hero p { font-size: 13px; }
+      .stat-pills { gap: 7px; }
+      .stat-pill { padding: 7px 11px; }
+      .stat-pill-count { font-size: 17px; }
+      .nav-link { padding: 8px 11px; font-size: 12px; }
+    }
+
+    @media (max-width: 600px) {
+      body { padding: 8px; }
+      .hero h1 { font-size: 22px; }
+      .top-nav { gap: 10px; margin-bottom: 12px; }
+      .stat-pills { gap: 6px; }
+      .stat-pill { padding: 6px 9px; }
+      .stat-pill-count { font-size: 15px; }
+      .stat-pill-label { font-size: 10px; letter-spacing: 0; }
+      .toolbar { grid-template-columns: 1fr 1fr; }
+      .toolbar-card { padding: 12px; }
+      .field-group input, .field-group select { padding: 8px 10px; font-size: 13px; }
+      .button-inline { padding: 8px 11px; font-size: 12px; }
+      .table-header-meta { display: none; }
+      .pagination-bar { gap: 6px; }
+      .page-btn { padding: 6px 10px; font-size: 11px; }
     }
   </style>
 </head>
@@ -689,7 +745,16 @@
       <div id="statusMessage" class="status-message">Loading invoices…</div>
       <div class="refresh-info">
         <div class="refresh-dot" id="refreshDot"></div>
-        <span id="refreshLabel">Auto-refresh every 10s</span>
+        <span id="refreshLabel">Auto-refresh every 30s</span>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination-bar">
+      <span id="pageInfo" class="page-info">—</span>
+      <div class="page-btns">
+        <button class="page-btn" id="prevPageBtn" type="button" disabled>← Prev</button>
+        <button class="page-btn" id="nextPageBtn" type="button" disabled>Next →</button>
       </div>
     </div>
 

@@ -754,8 +754,8 @@
       }
 
       .pdf-frame-wrap {
-        height: 650px;
-        min-height: 650px;
+        height: 500px;
+        min-height: 500px;
       }
 
       .debug-grid,
@@ -767,6 +767,47 @@
       .lines-card.is-fullscreen {
         inset: 8px;
       }
+    }
+
+    @media (max-width: 768px) {
+      body { padding: 8px; }
+      h1 { font-size: 22px; }
+
+      .top-nav-row { gap: 8px; }
+      .back-link { padding: 8px 11px; font-size: 12px; }
+      .invoice-nav button { padding: 7px 10px; font-size: 12px; }
+
+      .actions {
+        gap: 6px;
+        padding: 8px 0 10px;
+      }
+
+      .actions button { padding: 8px 10px; font-size: 12px; border-radius: 9px; }
+
+      .summary-pill { font-size: 11px; padding: 5px 8px; }
+
+      .pdf-frame-wrap { height: 380px; min-height: 380px; }
+
+      .header-grid { grid-template-columns: 1fr; }
+      .financial-grid { grid-template-columns: 1fr; }
+      .workflow-grid { grid-template-columns: 1fr; }
+      .debug-grid { grid-template-columns: 1fr; }
+
+      .lines-section { font-size: 12px; }
+      .lines-section table { min-width: 700px; }
+    }
+
+    @media (max-width: 480px) {
+      body { padding: 6px; }
+
+      .actions { flex-wrap: wrap; }
+      .actions button { flex: 1 1 calc(50% - 6px); min-width: 0; font-size: 11px; padding: 8px 6px; }
+
+      .stat-pill-count { font-size: 16px; }
+      .pdf-frame-wrap { height: 300px; min-height: 300px; }
+
+      /* Keyboard hint moves to top on small screens */
+      .kbd-hint { bottom: auto; top: 10px; right: 10px; font-size: 11px; }
     }
     /* ── Audit Trail ── */
     .audit-event {

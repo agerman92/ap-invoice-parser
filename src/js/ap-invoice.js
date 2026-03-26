@@ -150,7 +150,7 @@ async function loadInvoiceNavigation() {
     .select("id")
     .order("review_priority", { ascending: false })
     .order("created_at", { ascending: false })
-    .limit(500);
+    .limit(200);  // bounded — prevents loading thousands of IDs into memory
 
   if (error) {
     console.warn("Could not load invoice navigation:", error);

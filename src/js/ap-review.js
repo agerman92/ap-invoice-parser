@@ -27,13 +27,17 @@ const pillDuplicate      = document.getElementById("pillDuplicate");
 const pillFailed         = document.getElementById("pillFailed");
 
 // ─── State ───────────────────────────────────────────────────────────────────
-let allRows          = [];      // full unfiltered dataset from Supabase
+let currentPage    = 0;
+let totalCount     = 0;
+let currentRows    = [];   // current page only — NOT the full dataset
 let debounceTimer    = null;
 let autoRefreshTimer = null;
 let sortCol          = "review_priority";
-let sortDir          = "desc";  // "asc" | "desc"
-let openDropdownId   = null;    // invoice id whose dropdown is open
-let pendingConfirm   = null;    // { id, action, el, timer }
+let sortDir          = "desc";
+let openDropdownId   = null;
+let pendingConfirm   = null;
+
+const PAGE_SIZE = 75;
 
 // Read URL params on load
 const pageParams     = new URLSearchParams(window.location.search);
@@ -42,131 +46,147 @@ const pageParams     = new URLSearchParams(window.location.search);
 applyUrlParamsToInputs();
 bindEvents();
 startAutoRefresh();
-loadInvoices();
+loadPage();
 
-// ─── Load ────────────────────────────────────────────────────────────────────
-async function loadInvoices(showRefreshing = false) {
+// ─── Paginated server-side load ───────────────────────────────────────────────
+async function loadPage(showRefreshing = false) {
   if (showRefreshing) {
     refreshDot.classList.add("refreshing");
   } else {
     statusMessage.textContent = "Loading invoices…";
   }
 
-  const { data, error } = await supabase
-    .from("ap_invoices")
-    .select(`
-      id,
-      file_name,
-      vendor,
-      invoice_number,
-      po_number,
-      invoice_date,
-      total_invoice,
-      status,
-      review_status,
-      duplicate_status,
-      created_at,
-      warnings,
-      exception_flags,
-      exception_count,
-      review_priority
-    `)
-    .order("review_priority", { ascending: false })
-    .order("created_at",       { ascending: false });
+  try {
+    let query = supabase
+      .from("ap_invoices")
+      .select(`
+        id, file_name, vendor, invoice_number, po_number, invoice_date,
+        total_invoice, status, review_status, duplicate_status, created_at,
+        warnings, exception_flags, exception_count, review_priority
+      `, { count: "exact" });
 
-  refreshDot.classList.remove("refreshing");
+    query = applyServerFilters(query);
+    query = applyServerSort(query);
+    query = query.range(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE - 1);
 
-  if (error) {
-    console.error("Error loading invoices:", error);
-    statusMessage.textContent = `Error: ${error.message}`;
-    invoiceTableBody.innerHTML = "";
-    return;
+    const { data, error, count } = await query;
+    if (error) throw error;
+
+    currentRows = data || [];
+    totalCount  = count || 0;
+
+    const now = new Date();
+    refreshLabel.textContent = `Last refreshed ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+
+    renderTable(currentRows);
+    renderPagination();
+    syncUrlParams();
+
+    // Pill counts are lightweight HEAD queries — fire separately so table renders fast
+    loadStatCounts();
+
+  } catch (err) {
+    console.error("Load failed:", err);
+    statusMessage.textContent = `Error: ${err.message}`;
+  } finally {
+    refreshDot.classList.remove("refreshing");
   }
-
-  allRows = Array.isArray(data) ? data : [];
-
-  // Update last-refreshed label
-  const now = new Date();
-  refreshLabel.textContent = `Last refreshed ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
-
-  renderAll();
 }
 
-// ─── Render pipeline ─────────────────────────────────────────────────────────
-function renderAll() {
-  const filtered = applyFilters(allRows);
-  updateStatPills(allRows, filtered);
-  updateSortHeaders();
-  const sorted = applySort(filtered);
-  renderTable(sorted);
-  syncUrlParams();
-}
+// Keep old name as alias so any remaining references work
+const loadInvoices = (showRefreshing = false) => loadPage(showRefreshing);
 
-function applyFilters(rows) {
-  const vendor    = vendorSearch.value.trim().toLowerCase();
-  const po        = poSearch.value.trim().toLowerCase();
-  const inv       = invoiceSearch.value.trim().toLowerCase();
+// ─── Server-side filter builder ───────────────────────────────────────────────
+function applyServerFilters(query) {
+  const vendor    = vendorSearch.value.trim();
+  const po        = poSearch.value.trim();
+  const inv       = invoiceSearch.value.trim();
   const status    = statusFilter.value;
   const review    = reviewFilter.value;
   const duplicate = duplicateFilter.value;
 
-  // URL-only hidden filters
   const urlVendor      = pageParams.get("vendor") || "";
   const urlFrom        = pageParams.get("from")   || "";
   const urlTo          = pageParams.get("to")     || "";
   const urlMinPriority = Number(pageParams.get("minPriority") || 0);
 
-  return rows.filter((row) => {
-    if (vendor && !String(row.vendor || "").toLowerCase().includes(vendor)) return false;
-    if (po     && !String(row.po_number || "").toLowerCase().includes(po))  return false;
-    if (inv    && !String(row.invoice_number || "").toLowerCase().includes(inv)) return false;
-    if (status    && row.status           !== status)    return false;
-    if (review    && row.review_status    !== review)    return false;
-    if (duplicate && row.duplicate_status !== duplicate) return false;
+  if (vendor)    query = query.ilike("vendor", `%${vendor}%`);
+  if (po)        query = query.ilike("po_number", `%${po}%`);
+  if (inv)       query = query.ilike("invoice_number", `%${inv}%`);
+  if (status)    query = query.eq("status", status);
+  if (review)    query = query.eq("review_status", review);
+  if (duplicate) query = query.eq("duplicate_status", duplicate);
 
-    // Hidden URL filters
-    if (urlVendor && String(row.vendor || "") !== urlVendor) return false;
-    if (urlFrom) {
-      if (new Date(row.created_at) < new Date(`${urlFrom}T00:00:00`)) return false;
-    }
-    if (urlTo) {
-      const toEx = new Date(`${urlTo}T00:00:00`);
-      toEx.setDate(toEx.getDate() + 1);
-      if (new Date(row.created_at) >= toEx) return false;
-    }
-    if (urlMinPriority > 0 && Number(row.review_priority || 0) < urlMinPriority) return false;
+  if (urlVendor)           query = query.eq("vendor", urlVendor);
+  if (urlFrom)             query = query.gte("created_at", `${urlFrom}T00:00:00`);
+  if (urlTo) {
+    const d = new Date(`${urlTo}T00:00:00`);
+    d.setDate(d.getDate() + 1);
+    query = query.lt("created_at", d.toISOString());
+  }
+  if (urlMinPriority > 0)  query = query.gte("review_priority", urlMinPriority);
 
-    return true;
-  });
+  return query;
 }
 
-function applySort(rows) {
-  return [...rows].sort((a, b) => {
-    let valA = a[sortCol];
-    let valB = b[sortCol];
+function applyServerSort(query) {
+  // "warnings" is an array — can't sort server-side, fall back to priority
+  const dbCol = sortCol === "warnings" ? "review_priority" : sortCol;
+  return query
+    .order(dbCol, { ascending: sortDir === "asc" })
+    .order("created_at", { ascending: false });
+}
 
-    // Numeric cols
-    if (["review_priority", "total_invoice", "exception_count"].includes(sortCol)) {
-      valA = Number(valA || 0);
-      valB = Number(valB || 0);
-    } else if (sortCol === "warnings") {
-      valA = Array.isArray(a.warnings) ? a.warnings.length : 0;
-      valB = Array.isArray(b.warnings) ? b.warnings.length : 0;
-    } else if (sortCol === "created_at") {
-      valA = valA ? new Date(valA).getTime() : 0;
-      valB = valB ? new Date(valB).getTime() : 0;
-    } else {
-      valA = String(valA || "").toLowerCase();
-      valB = String(valB || "").toLowerCase();
-    }
+// ─── Stat pills — lightweight COUNT queries only ──────────────────────────────
+async function loadStatCounts() {
+  const countQ = async (filter) => {
+    let q = supabase.from("ap_invoices").select("*", { count: "exact", head: true });
+    q = filter(q);
+    const { count } = await q;
+    return Number(count || 0);
+  };
 
-    if (valA < valB) return sortDir === "asc" ? -1 : 1;
-    if (valA > valB) return sortDir === "asc" ? 1 : -1;
-    return 0;
-  });
+  const [total, needsReview, approved, duplicates, failed] = await Promise.all([
+    countQ(q => q),
+    countQ(q => q.eq("status", "needs_review")),
+    countQ(q => q.eq("status", "approved")),
+    countQ(q => q.eq("status", "duplicate")),
+    countQ(q => q.eq("status", "failed")),
+  ]);
+
+  pillTotalCount.textContent     = total;
+  pillReviewCount.textContent    = needsReview;
+  pillApprovedCount.textContent  = approved;
+  pillDuplicateCount.textContent = duplicates;
+  pillFailedCount.textContent    = failed;
+
+  const active = statusFilter.value;
+  pillTotal.classList.toggle("active",     !active);
+  pillReview.classList.toggle("active",    active === "needs_review");
+  pillApproved.classList.toggle("active",  active === "approved");
+  pillDuplicate.classList.toggle("active", active === "duplicate");
+  pillFailed.classList.toggle("active",    active === "failed");
+}
+
+// ─── Pagination ───────────────────────────────────────────────────────────────
+function renderPagination() {
+  const prevBtn  = document.getElementById("prevPageBtn");
+  const nextBtn  = document.getElementById("nextPageBtn");
+  const infoEl   = document.getElementById("pageInfo");
+  if (!prevBtn || !nextBtn || !infoEl) return;
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const from = totalCount === 0 ? 0 : currentPage * PAGE_SIZE + 1;
+  const to   = Math.min((currentPage + 1) * PAGE_SIZE, totalCount);
+
+  infoEl.textContent    = totalCount === 0 ? "No results" : `${from}–${to} of ${totalCount}`;
+  prevBtn.disabled      = currentPage === 0;
+  nextBtn.disabled      = currentPage >= totalPages - 1;
 }
 
 function renderTable(rows) {
+  updateSortHeaders();
+
   if (!rows.length) {
     const hasFilters = vendorSearch.value || poSearch.value || invoiceSearch.value ||
                        statusFilter.value || reviewFilter.value || duplicateFilter.value;
@@ -186,7 +206,7 @@ function renderTable(rows) {
     return;
   }
 
-  statusMessage.textContent = buildStatusMessage(rows.length);
+  statusMessage.textContent = buildStatusMessage();
 
   invoiceTableBody.innerHTML = rows.map((invoice) => {
     const warningCount   = Array.isArray(invoice.warnings) ? invoice.warnings.length : 0;
@@ -237,29 +257,6 @@ function renderTable(rows) {
   }).join("");
 }
 
-// ─── Stat pills ──────────────────────────────────────────────────────────────
-function updateStatPills(all, filtered) {
-  // Counts from the FULL dataset (not filtered) so pills always show global state
-  const needsReview = all.filter(r => r.status === "needs_review").length;
-  const approved    = all.filter(r => r.status === "approved").length;
-  const duplicates  = all.filter(r => r.status === "duplicate").length;
-  const failed      = all.filter(r => r.status === "failed").length;
-
-  pillTotalCount.textContent     = filtered.length;
-  pillReviewCount.textContent    = needsReview;
-  pillApprovedCount.textContent  = approved;
-  pillDuplicateCount.textContent = duplicates;
-  pillFailedCount.textContent    = failed;
-
-  // Highlight active pill based on current status filter
-  const active = statusFilter.value;
-  pillTotal.classList.toggle("active",     !active);
-  pillReview.classList.toggle("active",    active === "needs_review");
-  pillApproved.classList.toggle("active",  active === "approved");
-  pillDuplicate.classList.toggle("active", active === "duplicate");
-  pillFailed.classList.toggle("active",    active === "failed");
-}
-
 // ─── Sorting ─────────────────────────────────────────────────────────────────
 function handleSort(col) {
   if (sortCol === col) {
@@ -268,7 +265,8 @@ function handleSort(col) {
     sortCol = col;
     sortDir = col === "review_priority" || col === "created_at" ? "desc" : "asc";
   }
-  renderAll();
+  currentPage = 0;
+  loadPage();
 }
 
 function updateSortHeaders() {
@@ -400,13 +398,13 @@ async function executeQuickAction(id, action) {
     change_reason: `Quick action: ${action} from queue`,
   }]);
 
-  await loadInvoices(true);
+  await loadPage(true);
 }
 
 // ─── Filter events ───────────────────────────────────────────────────────────
-function scheduleRender() {
+function scheduleLoad() {
   clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(renderAll, 200);
+  debounceTimer = setTimeout(() => { currentPage = 0; loadPage(); }, 350);
 }
 
 function clearAllFilters() {
@@ -417,21 +415,28 @@ function clearAllFilters() {
   reviewFilter.value    = "";
   duplicateFilter.value = "";
   window.history.replaceState({}, "", window.location.pathname);
-  renderAll();
+  currentPage = 0;
+  loadPage();
 }
 
 // Expose for empty-state button
 window.clearAllFilters = clearAllFilters;
 
 function bindEvents() {
-  vendorSearch.addEventListener("input",    scheduleRender);
-  poSearch.addEventListener("input",        scheduleRender);
-  invoiceSearch.addEventListener("input",   scheduleRender);
-  statusFilter.addEventListener("change",   renderAll);
-  reviewFilter.addEventListener("change",   renderAll);
-  duplicateFilter.addEventListener("change", renderAll);
+  vendorSearch.addEventListener("input",    scheduleLoad);
+  poSearch.addEventListener("input",        scheduleLoad);
+  invoiceSearch.addEventListener("input",   scheduleLoad);
+  statusFilter.addEventListener("change",   () => { currentPage = 0; loadPage(); });
+  reviewFilter.addEventListener("change",   () => { currentPage = 0; loadPage(); });
+  duplicateFilter.addEventListener("change",() => { currentPage = 0; loadPage(); });
   clearFiltersButton.addEventListener("click", clearAllFilters);
-  refreshButton.addEventListener("click",   () => loadInvoices());
+  refreshButton.addEventListener("click",   () => loadPage());
+
+  // Pagination buttons (added in HTML)
+  const prevBtn = document.getElementById("prevPageBtn");
+  const nextBtn = document.getElementById("nextPageBtn");
+  if (prevBtn) prevBtn.addEventListener("click", () => { if (currentPage > 0) { currentPage--; loadPage(); } });
+  if (nextBtn) nextBtn.addEventListener("click", () => { currentPage++; loadPage(); });
 
   // Column sort headers
   document.querySelectorAll("th.sortable").forEach((th) => {
@@ -448,7 +453,8 @@ function bindEvents() {
 
 function setStatusFilter(value) {
   statusFilter.value = value;
-  renderAll();
+  currentPage = 0;
+  loadPage();
 }
 
 // ─── URL persistence ─────────────────────────────────────────────────────────
@@ -460,6 +466,7 @@ function syncUrlParams() {
   if (statusFilter.value)           params.set("status",    statusFilter.value);
   if (reviewFilter.value)           params.set("review",    reviewFilter.value);
   if (duplicateFilter.value)        params.set("duplicate", duplicateFilter.value);
+  if (currentPage > 0)              params.set("page",      String(currentPage));
 
   const qs = params.toString();
   const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
@@ -473,6 +480,7 @@ function applyUrlParamsToInputs() {
   const s = pageParams.get("status");
   const r = pageParams.get("review");
   const d = pageParams.get("duplicate");
+  const pg = pageParams.get("page");
 
   if (v && vendorSearch)    vendorSearch.value    = v;
   if (p && poSearch)        poSearch.value        = p;
@@ -480,18 +488,19 @@ function applyUrlParamsToInputs() {
   if (s && statusFilter)    statusFilter.value    = s;
   if (r && reviewFilter)    reviewFilter.value    = r;
   if (d && duplicateFilter) duplicateFilter.value = d;
+  if (pg)                   currentPage           = Number(pg) || 0;
 }
 
-// ─── Auto-refresh ────────────────────────────────────────────────────────────
+// ─── Auto-refresh (30s — reduced to ease DB load at scale) ───────────────────
 function startAutoRefresh() {
   if (autoRefreshTimer) clearInterval(autoRefreshTimer);
   autoRefreshTimer = setInterval(() => {
-    if (!document.hidden) loadInvoices(true);
-  }, 10000);
+    if (!document.hidden) loadPage(true);
+  }, 30000);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-function buildStatusMessage(count) {
+function buildStatusMessage() {
   const filters = [];
   if (vendorSearch.value.trim())  filters.push(`vendor: "${vendorSearch.value.trim()}"`);
   if (poSearch.value.trim())      filters.push(`PO: "${poSearch.value.trim()}"`);
@@ -501,7 +510,13 @@ function buildStatusMessage(count) {
   if (duplicateFilter.value)      filters.push(`duplicate: ${duplicateFilter.value}`);
 
   const suffix = filters.length ? ` · ${filters.join(" · ")}` : "";
-  return `${count} invoice${count !== 1 ? "s" : ""}${suffix}`;
+
+  if (totalCount <= PAGE_SIZE) {
+    return `${totalCount} invoice${totalCount !== 1 ? "s" : ""}${suffix}`;
+  }
+  const from = currentPage * PAGE_SIZE + 1;
+  const to   = Math.min((currentPage + 1) * PAGE_SIZE, totalCount);
+  return `Showing ${from}–${to} of ${totalCount} invoices${suffix}`;
 }
 
 function formatAge(dateStr) {

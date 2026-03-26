@@ -50,9 +50,6 @@ const cardDuplicateDollars = document.getElementById("cardDuplicateDollars");
 const cardFailedDollars  = document.getElementById("cardFailedDollars");
 const cardHighRiskDollars = document.getElementById("cardHighRiskDollars");
 
-// ─── State ───────────────────────────────────────────────────────────────────
-let allInvoicesCache = [];
-
 // ─── Event wiring ────────────────────────────────────────────────────────────
 refreshButton.addEventListener("click",      () => loadDashboard());
 applyFiltersButton.addEventListener("click", () => loadDashboard());
@@ -103,7 +100,7 @@ function clearFilters() {
   loadDashboard();
 }
 
-// ─── Main load ───────────────────────────────────────────────────────────────
+// ─── Main load — server-side aggregation ─────────────────────────────────────
 async function loadDashboard(silent = false) {
   try {
     if (silent) {
@@ -114,84 +111,111 @@ async function loadDashboard(silent = false) {
     }
 
     const filterState = getFilterState();
+    const { fromIso, toIsoExclusive, fromDate, toDateExclusive } = filterState;
 
-    const [
-      queuedCount,
-      retryCount,
-      failedCount,
-      failedExtrCount,
-      issueJobsResult,
-      allInvoicesResult
-    ] = await Promise.all([
-      getCount("ap_invoice_jobs", (q) => q.eq("status", "queued")),
-      getCount("ap_invoice_jobs", (q) => q.eq("status", "retry")),
-      getCount("ap_invoice_jobs", (q) => q.eq("status", "failed")),
-      getCount("ap_invoice_extractions", (q) =>
+    // ── 1. Queue job counts (indexed, fast) ──────────────────────────────────
+    const [queuedCount, retryCount, failedCount, failedExtrCount] = await Promise.all([
+      getCount("ap_invoice_jobs", q => q.eq("status", "queued")),
+      getCount("ap_invoice_jobs", q => q.eq("status", "retry")),
+      getCount("ap_invoice_jobs", q => q.eq("status", "failed")),
+      getCount("ap_invoice_extractions", q =>
         q.eq("status", "failed").gte("created_at", sevenDaysAgoIso())
       ),
-      supabase
-        .from("ap_invoice_jobs")
-        .select("id, invoice_id, status, attempt_count, last_error, updated_at")
-        .in("status", ["retry", "failed"])
-        .order("updated_at", { ascending: false })
-        .limit(25),
-      loadInvoicesForDateWindow(filterState.fromIso, filterState.toIsoExclusive)
     ]);
 
-    refreshDot.classList.remove("refreshing");
+    queuedJobs.textContent          = String(queuedCount);
+    retryJobs.textContent           = String(retryCount);
+    failedJobs.textContent          = String(failedCount);
+    failedExtractions7d.textContent = String(failedExtrCount);
+
+    // ── 2. Recent issue jobs (small fetch — max 25 rows) ─────────────────────
+    const { data: issueJobs, error: jobsErr } = await supabase
+      .from("ap_invoice_jobs")
+      .select("id, invoice_id, status, attempt_count, last_error, updated_at")
+      .in("status", ["retry", "failed"])
+      .order("updated_at", { ascending: false })
+      .limit(25);
+
+    if (jobsErr) throw jobsErr;
+    renderIssueJobs(issueJobs || []);
+
+    // ── 3. Headline metrics — COUNT queries (use indexes, return 0 rows) ─────
+    const windowMs    = toDateExclusive.getTime() - fromDate.getTime();
+    const priorFromIso = new Date(fromDate.getTime() - windowMs).toISOString();
+
+    const countInWindow = async (from, to, extraFilter) => {
+      let q = supabase.from("ap_invoices")
+        .select("*", { count: "exact", head: true })
+        .gte("created_at", from).lt("created_at", to);
+      if (filterState.vendor) q = q.eq("vendor", filterState.vendor);
+      if (filterState.status) q = q.eq("status", filterState.status);
+      q = extraFilter(q);
+      const { count } = await q;
+      return Number(count || 0);
+    };
+
+    const [nrCurr, nrPrior, crCurr, crPrior, apCurr, apPrior, dupCurr, dupPrior] =
+      await Promise.all([
+        countInWindow(fromIso, toIsoExclusive, q => q.eq("status", "needs_review")),
+        countInWindow(priorFromIso, fromIso,   q => q.eq("status", "needs_review")),
+        countInWindow(fromIso, toIsoExclusive, q => q.gte("review_priority", 80)),
+        countInWindow(priorFromIso, fromIso,   q => q.gte("review_priority", 80)),
+        countInWindow(fromIso, toIsoExclusive, q => q.eq("review_status", "approved")),
+        countInWindow(priorFromIso, fromIso,   q => q.eq("review_status", "approved")),
+        countInWindow(fromIso, toIsoExclusive, q => q.eq("status", "duplicate")),
+        countInWindow(priorFromIso, fromIso,   q => q.eq("status", "duplicate")),
+      ]);
+
+    needsReviewInvoices.textContent = String(nrCurr);
+    criticalInvoices.textContent    = String(crCurr);
+    approvedToday.textContent       = String(apCurr);
+    duplicateInvoices.textContent   = String(dupCurr);
+
+    renderTrend(needsReviewTrend, nrCurr,  nrPrior);
+    renderTrend(criticalTrend,    crCurr,  crPrior);
+    renderTrend(approvedTrend,    apCurr,  apPrior);
+    renderTrend(duplicateTrend,   dupCurr, dupPrior);
+
+    // ── 4. Financial totals — fetch only total_invoice for the window ─────────
+    // Bounded to 5000 rows. For larger datasets replace with a Postgres RPC.
+    const { data: financialRows, error: finErr } = await supabase
+      .from("ap_invoices")
+      .select("total_invoice, status, review_status, review_priority")
+      .gte("created_at", fromIso)
+      .lt("created_at", toIsoExclusive)
+      .limit(5000);
+
+    if (finErr) throw finErr;
+    const finFiltered = applyLocalFilters(financialRows || [], filterState);
+    renderFinancials(finFiltered);
+
+    // ── 5. Flags, vendors, high-priority — bounded fetch ─────────────────────
+    const { data: detailRows, error: detailErr } = await supabase
+      .from("ap_invoices")
+      .select("id, vendor, invoice_number, total_invoice, status, review_priority, exception_flags")
+      .gte("created_at", fromIso)
+      .lt("created_at", toIsoExclusive)
+      .limit(2000);
+
+    if (detailErr) throw detailErr;
+    const detailFiltered = applyLocalFilters(detailRows || [], filterState);
+    populateVendorFilter(detailRows || []);
+    renderTopFlags(detailFiltered);
+    renderTopVendors(detailFiltered);
+    renderHighPriorityInvoices(detailFiltered);
 
     const now = new Date();
     refreshLabel.textContent = `Last refreshed ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
 
-    queuedJobs.textContent        = String(queuedCount);
-    retryJobs.textContent         = String(retryCount);
-    failedJobs.textContent        = String(failedCount);
-    failedExtractions7d.textContent = String(failedExtrCount);
+    const totalShown = finFiltered.length;
+    statusMessage.textContent = `Dashboard loaded · ${totalShown} invoice${totalShown !== 1 ? "s" : ""} in window`;
 
-    if (issueJobsResult.error) throw issueJobsResult.error;
-    renderIssueJobs(issueJobsResult.data || []);
-
-    if (allInvoicesResult.error) throw allInvoicesResult.error;
-
-    allInvoicesCache = allInvoicesResult.data || [];
-    populateVendorFilter(allInvoicesCache);
-
-    const filtered = applyLocalFilters(allInvoicesCache, filterState);
-    const prior    = filterPriorPeriod(allInvoicesCache, filterState);
-
-    renderHeadlineMetrics(filtered, prior);
-    renderFinancials(filtered);
-    renderTopFlags(filtered);
-    renderTopVendors(filtered);
-    renderHighPriorityInvoices(filtered);
-
-    statusMessage.textContent = `Dashboard loaded · ${filtered.length} invoice${filtered.length !== 1 ? "s" : ""} in current window`;
   } catch (error) {
-    refreshDot.classList.remove("refreshing");
     console.error("Dashboard load failed:", error);
     statusMessage.textContent = `Load failed: ${error.message}`;
+  } finally {
+    refreshDot.classList.remove("refreshing");
   }
-}
-
-async function loadInvoicesForDateWindow(fromIso, toIsoExclusive) {
-  return supabase
-    .from("ap_invoices")
-    .select(`
-      id,
-      vendor,
-      invoice_number,
-      total_invoice,
-      status,
-      review_status,
-      duplicate_status,
-      review_priority,
-      exception_flags,
-      created_at,
-      approved_at
-    `)
-    .gte("created_at", fromIso)
-    .lt("created_at", toIsoExclusive)
-    .limit(10000);
 }
 
 // ─── Filter state ────────────────────────────────────────────────────────────
@@ -220,44 +244,6 @@ function applyLocalFilters(rows, filterState) {
   });
 }
 
-function filterPriorPeriod(rows, filterState) {
-  const windowMs         = filterState.toDateExclusive.getTime() - filterState.fromDate.getTime();
-  const priorStart       = new Date(filterState.fromDate.getTime() - windowMs);
-  const priorEndExclusive = new Date(filterState.fromDate.getTime());
-
-  return rows.filter((row) => {
-    const created = new Date(row.created_at);
-    if (created < priorStart || created >= priorEndExclusive) return false;
-    if (filterState.status && row.status         !== filterState.status) return false;
-    if (filterState.vendor && (row.vendor || "") !== filterState.vendor) return false;
-    return true;
-  });
-}
-
-// ─── Renderers ───────────────────────────────────────────────────────────────
-function renderHeadlineMetrics(currentRows, priorRows) {
-  const nrCurr = currentRows.filter(i => i.status === "needs_review").length;
-  const nrPrior = priorRows.filter(i => i.status === "needs_review").length;
-
-  const crCurr = currentRows.filter(i => Number(i.review_priority || 0) >= 80).length;
-  const crPrior = priorRows.filter(i => Number(i.review_priority || 0) >= 80).length;
-
-  const apCurr = currentRows.filter(i => i.review_status === "approved").length;
-  const apPrior = priorRows.filter(i => i.review_status === "approved").length;
-
-  const dupCurr = currentRows.filter(i => i.status === "duplicate").length;
-  const dupPrior = priorRows.filter(i => i.status === "duplicate").length;
-
-  needsReviewInvoices.textContent = String(nrCurr);
-  criticalInvoices.textContent    = String(crCurr);
-  approvedToday.textContent       = String(apCurr);
-  duplicateInvoices.textContent   = String(dupCurr);
-
-  renderTrend(needsReviewTrend, nrCurr,  nrPrior);
-  renderTrend(criticalTrend,    crCurr,  crPrior);
-  renderTrend(approvedTrend,    apCurr,  apPrior);
-  renderTrend(duplicateTrend,   dupCurr, dupPrior);
-}
 
 function renderTrend(el, current, prior) {
   if (!el) return;
