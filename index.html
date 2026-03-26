@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AP Invoice Parser Test</title>
+  <title>AP Invoice Upload</title>
 
   <style>
     :root {
@@ -21,9 +21,7 @@
       --shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -34,50 +32,86 @@
     }
 
     .page {
-      max-width: 980px;
+      max-width: 1020px;
       margin: 0 auto;
-      padding: 32px 20px 48px;
+      padding: 28px 20px 56px;
     }
 
-    .hero {
-      margin-bottom: 22px;
+    /* ── Top nav ── */
+    .top-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
     }
+
+    .hero { flex: 1; }
 
     .eyebrow {
       display: inline-block;
-      padding: 6px 12px;
+      padding: 5px 11px;
       border-radius: 999px;
       background: rgba(56, 189, 248, 0.12);
       color: #7dd3fc;
       border: 1px solid rgba(56, 189, 248, 0.22);
-      font-size: 12px;
+      font-size: 11px;
       font-weight: bold;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
-      margin-bottom: 14px;
+      margin-bottom: 10px;
     }
 
     h1 {
-      margin: 0 0 10px 0;
-      font-size: 40px;
+      margin: 0 0 8px 0;
+      font-size: 36px;
       line-height: 1.05;
     }
 
     .hero p {
       margin: 0;
       color: var(--muted);
-      font-size: 16px;
+      font-size: 14px;
       line-height: 1.5;
-      max-width: 820px;
+      max-width: 700px;
     }
 
-    .grid {
+    .nav-links {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      padding-top: 4px;
+    }
+
+    .nav-link {
+      display: inline-block;
+      padding: 9px 14px;
+      border-radius: 12px;
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.18);
+      text-decoration: none;
+      font-weight: bold;
+      font-size: 13px;
+      color: var(--blue);
+      white-space: nowrap;
+    }
+
+    .nav-link:hover {
+      background: rgba(56, 189, 248, 0.14);
+    }
+
+    /* ── Main grid ── */
+    .main-grid {
       display: grid;
       grid-template-columns: 1.1fr 0.9fr;
       gap: 20px;
       align-items: start;
+      margin-bottom: 20px;
     }
 
+    /* ── Cards ── */
     .card {
       background: linear-gradient(180deg, var(--panel-3) 0%, var(--panel) 100%);
       border: 1px solid var(--border);
@@ -87,81 +121,237 @@
     }
 
     .card-header {
-      padding: 18px 20px 10px;
+      padding: 16px 20px 10px;
       border-bottom: 1px solid rgba(255,255,255,0.04);
     }
 
-    .card-header h2 {
-      margin: 0 0 6px 0;
-      font-size: 22px;
-    }
+    .card-header h2 { margin: 0 0 4px 0; font-size: 20px; }
+    .card-header p  { margin: 0; color: var(--muted); font-size: 13px; }
 
-    .card-header p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 14px;
-    }
+    .card-body { padding: 18px 20px; }
 
-    .card-body {
-      padding: 20px;
-    }
-
-    .upload-box {
+    /* ── Drop zone ── */
+    .drop-zone {
       border: 1.5px dashed #47627f;
       background: rgba(255,255,255,0.02);
-      border-radius: 16px;
-      padding: 24px;
-    }
-
-    .upload-box form {
+      border-radius: 14px;
+      padding: 28px 20px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      text-align: center;
     }
 
-    .file-label {
-      font-size: 13px;
-      font-weight: bold;
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: rgba(56, 189, 248, 0.6);
+      background: rgba(56, 189, 248, 0.04);
+    }
+
+    .drop-zone.has-file {
+      border-color: rgba(34, 197, 94, 0.5);
+      background: rgba(34, 197, 94, 0.04);
+    }
+
+    .drop-icon {
+      font-size: 32px;
+      opacity: 0.6;
+    }
+
+    .drop-label {
+      font-size: 14px;
       color: var(--muted);
+    }
+
+    .drop-label strong { color: var(--text); }
+
+    .drop-sub { font-size: 12px; color: var(--muted); }
+
+    #pdfFile { display: none; }
+
+    /* ── File queue list ── */
+    .file-queue { display: flex; flex-direction: column; gap: 6px; }
+
+    .file-queue-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: bold;
       text-transform: uppercase;
       letter-spacing: 0.04em;
+      margin-bottom: 4px;
     }
 
-    input[type="file"] {
-      width: 100%;
-      padding: 12px;
-      border-radius: 12px;
+    .file-queue-clear {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+
+    .file-queue-clear:hover { color: #fca5a5; background: rgba(239,68,68,0.08); }
+
+    .file-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 11px;
+      border-radius: 9px;
       border: 1px solid var(--border);
-      background: #0f1828;
-      color: var(--text);
+      background: rgba(255,255,255,0.02);
+      font-size: 13px;
+      min-width: 0;
     }
 
-    button {
-      border: 1px solid rgba(56, 189, 248, 0.25);
+    .file-row-name { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .file-row-size { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .file-row-status { font-size: 11px; font-weight: bold; white-space: nowrap; min-width: 80px; text-align: right; }
+    .file-row-status.pending   { color: var(--muted); }
+    .file-row-status.uploading { color: var(--blue); }
+    .file-row-status.done      { color: #86efac; }
+    .file-row-status.error     { color: #fca5a5; }
+
+    .file-row.is-uploading { border-color: rgba(56,189,248,0.3); background: rgba(56,189,248,0.04); }
+    .file-row.is-done      { border-color: rgba(34,197,94,0.3);  background: rgba(34,197,94,0.04); }
+    .file-row.is-error     { border-color: rgba(239,68,68,0.3);  background: rgba(239,68,68,0.04); }
+
+    .file-row-remove {
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; font-size: 13px; padding: 2px 5px; border-radius: 5px; line-height: 1;
+    }
+
+    .file-row-remove:hover { color: #fca5a5; }
+
+    /* ── Upload button ── */
+    .upload-btn {
+      display: block;
+      width: 100%;
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid rgba(56, 189, 248, 0.3);
       background: linear-gradient(180deg, #1d4f72 0%, #12334d 100%);
       color: white;
-      padding: 12px 16px;
       border-radius: 12px;
       font-weight: bold;
+      font-size: 15px;
       cursor: pointer;
-      transition: transform 0.12s ease, opacity 0.12s ease, background 0.12s ease;
+      transition: transform 0.12s ease, opacity 0.12s ease;
     }
 
-    button:hover {
-      transform: translateY(-1px);
-      opacity: 0.95;
+    .upload-btn:hover:not(:disabled) { transform: translateY(-1px); opacity: 0.95; }
+    .upload-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Batch progress bar ── */
+    .batch-progress { display: none; margin-top: 12px; }
+    .batch-progress.visible { display: block; }
+
+    .batch-progress-bar-wrap {
+      height: 6px;
+      background: rgba(148,163,184,0.12);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-bottom: 6px;
     }
 
-    .meta-list {
-      display: grid;
-      gap: 12px;
+    .batch-progress-bar {
+      height: 100%;
+      background: var(--blue);
+      border-radius: 999px;
+      transition: width 0.3s ease;
+      width: 0%;
     }
+
+    .batch-progress-label { font-size: 12px; color: var(--muted); text-align: right; }
+
+    /* ── Result card ── */
+    .result-card {
+      display: none;
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .result-card.success { display: block; background: rgba(34,197,94,0.07);  border-color: rgba(34,197,94,0.3); }
+    .result-card.partial { display: block; background: rgba(245,158,11,0.07); border-color: rgba(245,158,11,0.3); }
+    .result-card.error   { display: block; background: rgba(239,68,68,0.07);  border-color: rgba(239,68,68,0.3); }
+
+    .result-card-title { font-weight: bold; font-size: 14px; margin-bottom: 8px; }
+    .result-card.success .result-card-title { color: #86efac; }
+    .result-card.partial .result-card-title { color: #fcd34d; }
+    .result-card.error   .result-card-title { color: #fca5a5; }
+
+    .result-summary-stats { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+    .result-stat { font-size: 13px; color: var(--muted); }
+    .result-stat strong { color: var(--text); }
+    .result-stat.stat-ok   strong { color: #86efac; }
+    .result-stat.stat-fail strong { color: #fca5a5; }
+
+    .result-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    .result-btn {
+      padding: 7px 12px;
+      border-radius: 9px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .result-btn:hover { background: #273449; }
+
+    .result-btn-primary {
+      background: rgba(56,189,248,0.1);
+      border-color: rgba(56,189,248,0.3);
+      color: var(--blue);
+    }
+
+    .result-btn-primary:hover { background: rgba(56,189,248,0.18); }
+
+    /* ── Pipeline summary ── */
+    .meta-list { display: grid; gap: 10px; }
 
     .meta-item {
-      padding: 14px 16px;
+      padding: 12px 14px;
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: 12px;
       background: rgba(255,255,255,0.02);
+    }
+
+    .meta-item-step {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: rgba(56,189,248,0.12);
+      border: 1px solid rgba(56,189,248,0.22);
+      color: var(--blue);
+      font-size: 11px;
+      font-weight: bold;
+      text-align: center;
+      line-height: 20px;
+      margin-right: 8px;
+      flex-shrink: 0;
     }
 
     .meta-item-title {
@@ -170,75 +360,134 @@
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      margin-bottom: 6px;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
     }
 
     .meta-item-value {
-      font-size: 14px;
+      font-size: 13px;
       line-height: 1.45;
+      color: var(--text);
+      padding-left: 28px;
     }
 
-    .result-section {
-      margin-top: 20px;
+    /* ── Upload history ── */
+    .history-section {
+      margin-top: 24px;
     }
 
-    .result-header {
+    .section-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 12px;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .section-header h2 { margin: 0; font-size: 20px; }
+
+    .history-empty {
+      padding: 32px 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+      background: linear-gradient(180deg, var(--panel-3) 0%, var(--panel) 100%);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .history-item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px 16px;
+      align-items: center;
+      padding: 13px 16px;
+      background: linear-gradient(180deg, var(--panel-3) 0%, var(--panel) 100%);
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .history-item-left {}
+
+    .history-filename {
+      font-weight: bold;
+      font-size: 14px;
+      margin-bottom: 3px;
+      word-break: break-all;
+    }
+
+    .history-meta {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      gap: 10px;
       flex-wrap: wrap;
     }
 
-    .result-header h2 {
-      margin: 0;
-      font-size: 22px;
+    .history-actions {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      flex-shrink: 0;
     }
 
-    .result-pill {
+    .status-pill {
       display: inline-block;
-      padding: 6px 10px;
+      padding: 3px 9px;
       border-radius: 999px;
-      background: rgba(34, 197, 94, 0.12);
-      color: #86efac;
-      border: 1px solid rgba(34, 197, 94, 0.22);
+      font-size: 11px;
+      font-weight: bold;
+      border: 1px solid transparent;
+    }
+
+    .pill-green  { background:rgba(34,197,94,0.12);  color:#86efac; border-color:rgba(34,197,94,0.25); }
+    .pill-yellow { background:rgba(245,158,11,0.12); color:#fcd34d; border-color:rgba(245,158,11,0.25); }
+    .pill-red    { background:rgba(239,68,68,0.12);  color:#fca5a5; border-color:rgba(239,68,68,0.25); }
+    .pill-blue   { background:rgba(56,189,248,0.12); color:#7dd3fc; border-color:rgba(56,189,248,0.25); }
+    .pill-muted  { background:rgba(148,163,184,0.1); color:var(--muted); border-color:rgba(148,163,184,0.2); }
+
+    .history-open-btn {
+      padding: 5px 11px;
+      border-radius: 8px;
+      background: rgba(56,189,248,0.1);
+      border: 1px solid rgba(56,189,248,0.25);
+      color: var(--blue);
       font-size: 12px;
       font-weight: bold;
+      text-decoration: none;
+      white-space: nowrap;
     }
 
-    pre {
-      margin: 0;
-      background: #09111d;
-      color: #dbe7f3;
+    .history-open-btn:hover { background: rgba(56,189,248,0.18); }
+
+    .refresh-history-btn {
+      padding: 6px 12px;
+      border-radius: 9px;
       border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 18px;
-      overflow: auto;
-      white-space: pre-wrap;
-      line-height: 1.45;
-      box-shadow: var(--shadow);
-      min-height: 180px;
+      background: var(--panel-2);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
     }
 
-    .footer-note {
-      margin-top: 14px;
-      color: var(--muted);
-      font-size: 13px;
-    }
+    .refresh-history-btn:hover { background: #273449; color: var(--text); }
 
     @media (max-width: 860px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
-
-      h1 {
-        font-size: 32px;
-      }
-
-      .page {
-        padding-top: 24px;
-      }
+      .main-grid { grid-template-columns: 1fr; }
+      h1 { font-size: 28px; }
+      .page { padding-top: 20px; }
+      .history-item { grid-template-columns: 1fr; }
+      .history-actions { justify-content: flex-start; }
     }
   </style>
 
@@ -251,181 +500,475 @@
 </head>
 <body>
   <div class="page">
-    <section class="hero">
-      <div class="eyebrow">Accounts Payable Automation</div>
-      <h1>Upload and Queue AP Invoices</h1>
-      <p>
-        Upload a vendor PDF, store it in Supabase, create the invoice record, and send it into the queue-based parsing pipeline for structured extraction and AP review.
-      </p>
-    </section>
 
-    <section class="grid">
+    <!-- Top nav -->
+    <div class="top-nav">
+      <div class="hero">
+        <div class="eyebrow">Accounts Payable Automation</div>
+        <h1>AP Invoice Upload</h1>
+        <p>Upload one or more vendor PDFs. Each file is stored, a record is created, and the invoice is queued for parsing and AP review.</p>
+      </div>
+      <div class="nav-links">
+        <a class="nav-link" href="./ap-review.html">Review Queue</a>
+        <a class="nav-link" href="./ap-admin.html">Admin Dashboard</a>
+      </div>
+    </div>
+
+    <!-- Upload + Pipeline cards -->
+    <section class="main-grid">
+
+      <!-- Upload card -->
       <div class="card">
         <div class="card-header">
           <h2>Invoice Upload</h2>
-          <p>Select a PDF invoice and send it into the processing queue.</p>
+          <p>Drop PDFs or click to browse. Multiple files supported.</p>
         </div>
         <div class="card-body">
-          <div class="upload-box">
-            <form id="uploadForm">
-              <label class="file-label" for="pdfFile">Invoice PDF</label>
-              <input type="file" id="pdfFile" name="file" accept="application/pdf" required />
-              <button type="submit">Upload & Queue Invoice</button>
-            </form>
+
+          <!-- Drop zone -->
+          <div class="drop-zone" id="dropZone">
+            <div class="drop-icon">📄</div>
+            <div class="drop-label"><strong>Drop PDFs here</strong> or click to browse</div>
+            <div class="drop-sub">Select multiple files at once — each uploads individually</div>
+            <input type="file" id="pdfFile" accept="application/pdf" multiple />
           </div>
+
+          <!-- File queue list -->
+          <div id="fileQueueWrap" style="display:none; margin-top:12px;">
+            <div class="file-queue-header">
+              <span id="fileQueueLabel">0 files selected</span>
+              <button class="file-queue-clear" id="clearQueueBtn" type="button">✕ Clear all</button>
+            </div>
+            <div class="file-queue" id="fileQueue"></div>
+          </div>
+
+          <!-- Upload button -->
+          <button class="upload-btn" id="uploadBtn" type="button" disabled>
+            Upload &amp; Queue Invoices
+          </button>
+
+          <!-- Batch progress bar -->
+          <div class="batch-progress" id="batchProgress">
+            <div class="batch-progress-bar-wrap">
+              <div class="batch-progress-bar" id="batchProgressBar"></div>
+            </div>
+            <div class="batch-progress-label" id="batchProgressLabel">0 / 0</div>
+          </div>
+
+          <!-- Batch result summary -->
+          <div class="result-card" id="resultCard">
+            <div class="result-card-title" id="resultTitle"></div>
+            <div class="result-summary-stats" id="resultStats"></div>
+            <div class="result-actions" id="resultActions"></div>
+          </div>
+
         </div>
       </div>
 
+      <!-- Pipeline summary card -->
       <div class="card">
         <div class="card-header">
-          <h2>Pipeline Summary</h2>
-          <p>Current flow for upload and processing.</p>
+          <h2>Pipeline Overview</h2>
+          <p>What happens after you upload.</p>
         </div>
         <div class="card-body">
           <div class="meta-list">
             <div class="meta-item">
-              <div class="meta-item-title">Storage</div>
-              <div class="meta-item-value">PDF uploads land in the <strong>ap-invoices</strong> bucket.</div>
+              <div class="meta-item-title">
+                <span class="meta-item-step">1</span>Storage
+              </div>
+              <div class="meta-item-value">PDF is stored in the <strong>ap-invoices</strong> Supabase bucket under <code>manual-tests/</code>.</div>
             </div>
             <div class="meta-item">
-              <div class="meta-item-title">Invoice Record</div>
-              <div class="meta-item-value">A new row is inserted into <strong>ap_invoices</strong> with status <strong>uploaded</strong>.</div>
+              <div class="meta-item-title">
+                <span class="meta-item-step">2</span>Invoice Record
+              </div>
+              <div class="meta-item-value">A row is created in <strong>ap_invoices</strong> with status <strong>uploaded</strong> and review status <strong>unreviewed</strong>.</div>
             </div>
             <div class="meta-item">
-              <div class="meta-item-title">Queue</div>
-              <div class="meta-item-value">The system calls <strong>enqueue-invoice</strong> and creates a durable parse job.</div>
+              <div class="meta-item-title">
+                <span class="meta-item-step">3</span>Parse Queue
+              </div>
+              <div class="meta-item-value"><strong>enqueue-invoice</strong> creates a durable parse job per file. Workers process them in parallel.</div>
             </div>
             <div class="meta-item">
-              <div class="meta-item-title">Worker</div>
-              <div class="meta-item-value">The worker processes the invoice asynchronously and routes it into vendor-specific parsing when available.</div>
+              <div class="meta-item-title">
+                <span class="meta-item-step">4</span>AP Review
+              </div>
+              <div class="meta-item-value">Once extracted, each invoice appears in the <strong>Review Queue</strong> for AP validation and approval.</div>
             </div>
           </div>
         </div>
       </div>
+
     </section>
 
-    <section class="result-section">
-      <div class="result-header">
-        <h2>Result</h2>
-        <span class="result-pill">Queue-Based Pipeline</span>
+    <!-- Recent uploads -->
+    <section class="history-section">
+      <div class="section-header">
+        <h2>Recent Uploads</h2>
+        <button class="refresh-history-btn" id="refreshHistoryBtn" type="button">↻ Refresh</button>
       </div>
-      <pre id="result">No file uploaded yet.</pre>
-      <div class="footer-note">
-        This page is intended for controlled upload/testing against the AP invoice pipeline.
+      <div id="historyContainer">
+        <div class="history-empty">Loading recent uploads…</div>
       </div>
     </section>
+
   </div>
 
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
-    const result = document.getElementById("result");
-    const form = document.getElementById("uploadForm");
-
-    const supabaseUrl = window.ENV?.SUPABASE_URL;
+    const supabaseUrl     = window.ENV?.SUPABASE_URL;
     const supabaseAnonKey = window.ENV?.SUPABASE_ANON_KEY;
+    const supabase        = createClient(supabaseUrl, supabaseAnonKey);
 
-    if (!supabaseUrl || !supabaseAnonKey) {
-      result.textContent = JSON.stringify(
-        { error: "Missing SUPABASE_URL or SUPABASE_ANON_KEY in window.ENV." },
-        null,
-        2
-      );
-      throw new Error("Missing Supabase configuration.");
+    // ── DOM refs ──────────────────────────────────────────────────────────────
+    const dropZone           = document.getElementById("dropZone");
+    const pdfFileInput       = document.getElementById("pdfFile");
+    const fileQueueWrap      = document.getElementById("fileQueueWrap");
+    const fileQueueEl        = document.getElementById("fileQueue");
+    const fileQueueLabel     = document.getElementById("fileQueueLabel");
+    const clearQueueBtn      = document.getElementById("clearQueueBtn");
+    const uploadBtn          = document.getElementById("uploadBtn");
+    const batchProgress      = document.getElementById("batchProgress");
+    const batchProgressBar   = document.getElementById("batchProgressBar");
+    const batchProgressLabel = document.getElementById("batchProgressLabel");
+    const resultCard         = document.getElementById("resultCard");
+    const resultTitle        = document.getElementById("resultTitle");
+    const resultStats        = document.getElementById("resultStats");
+    const resultActions      = document.getElementById("resultActions");
+    const historyContainer   = document.getElementById("historyContainer");
+    const refreshHistoryBtn  = document.getElementById("refreshHistoryBtn");
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    // Each item: { file, id, status: 'pending'|'uploading'|'done'|'error', invoiceId, error }
+    let fileQueue   = [];
+    let isUploading = false;
+
+    // ── Drop zone ─────────────────────────────────────────────────────────────
+    dropZone.addEventListener("click", () => { if (!isUploading) pdfFileInput.click(); });
+
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (!isUploading) dropZone.classList.add("drag-over");
+    });
+
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("drag-over");
+      if (isUploading) return;
+      const files = Array.from(e.dataTransfer.files).filter(f => f.type === "application/pdf");
+      if (!files.length) { alert("Only PDF files are accepted."); return; }
+      addFiles(files);
+    });
+
+    pdfFileInput.addEventListener("change", () => {
+      const files = Array.from(pdfFileInput.files);
+      if (files.length) addFiles(files);
+      pdfFileInput.value = "";
+    });
+
+    // ── File queue management ─────────────────────────────────────────────────
+    function addFiles(files) {
+      const newItems = files.map(f => ({
+        file:      f,
+        id:        `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        status:    "pending",
+        invoiceId: null,
+        error:     null
+      }));
+      fileQueue = [...fileQueue, ...newItems];
+      renderQueue();
+      clearResult();
     }
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    function removeFile(id) {
+      fileQueue = fileQueue.filter(item => item.id !== id);
+      renderQueue();
+      clearResult();
+    }
 
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
+    clearQueueBtn.addEventListener("click", () => {
+      if (isUploading) return;
+      fileQueue = [];
+      renderQueue();
+      clearResult();
+    });
 
-      const fileInput = document.getElementById("pdfFile");
-      const file = fileInput.files[0];
+    function renderQueue() {
+      const count = fileQueue.length;
 
-      if (!file) {
-        result.textContent = "Please choose a PDF.";
+      if (count === 0) {
+        fileQueueWrap.style.display = "none";
+        dropZone.classList.remove("has-files");
+        uploadBtn.disabled = true;
         return;
       }
 
-      result.textContent = "Uploading invoice to Supabase...";
+      fileQueueWrap.style.display = "block";
+      dropZone.classList.add("has-files");
 
-      try {
-        const timestamp = Date.now();
-        const safeName = file.name.replace(/\s+/g, "_");
-        const storagePath = `manual-tests/${timestamp}-${safeName}`;
+      const pendingCount = fileQueue.filter(i => i.status === "pending").length;
+      uploadBtn.disabled = isUploading || pendingCount === 0;
 
-        const { error: uploadError } = await supabase.storage
-          .from("ap-invoices")
-          .upload(storagePath, file, {
-            contentType: file.type || "application/pdf",
-            upsert: false
-          });
+      fileQueueLabel.textContent = `${count} file${count !== 1 ? "s" : ""} selected`;
 
-        if (uploadError) {
-          throw uploadError;
+      fileQueueEl.innerHTML = fileQueue.map(item => {
+        const stateClass  = item.status === "uploading" ? "is-uploading" :
+                            item.status === "done"      ? "is-done"      :
+                            item.status === "error"     ? "is-error"     : "";
+
+        const statusText  = item.status === "pending"   ? "Pending"      :
+                            item.status === "uploading" ? "⟳ Uploading…" :
+                            item.status === "done"      ? "✓ Done"       :
+                            `✗ ${item.error || "Failed"}`;
+
+        const canRemove = !isUploading && item.status !== "uploading";
+        const removeBtn = canRemove
+          ? `<button class="file-row-remove" onclick="removeFileById('${item.id}')" title="Remove">✕</button>`
+          : `<span style="width:22px;display:inline-block;"></span>`;
+
+        return `
+          <div class="file-row ${stateClass}" id="file-row-${item.id}">
+            <span class="file-row-name" title="${escapeHtml(item.file.name)}">${escapeHtml(item.file.name)}</span>
+            <span class="file-row-size">${formatFileSize(item.file.size)}</span>
+            <span class="file-row-status ${item.status}">${statusText}</span>
+            ${removeBtn}
+          </div>
+        `;
+      }).join("");
+    }
+
+    window.removeFileById = (id) => removeFile(id);
+
+    // ── Batch upload ──────────────────────────────────────────────────────────
+    uploadBtn.addEventListener("click", handleBatchUpload);
+
+    async function handleBatchUpload() {
+      const pending = fileQueue.filter(item => item.status === "pending");
+      if (!pending.length || isUploading) return;
+
+      isUploading = true;
+      uploadBtn.disabled = true;
+      clearQueueBtn.disabled = true;
+      batchProgress.classList.add("visible");
+      clearResult();
+
+      const total   = pending.length;
+      let completed = 0;
+      let succeeded = 0;
+      let failed    = 0;
+
+      updateProgress(0, total);
+
+      for (const item of pending) {
+        item.status = "uploading";
+        renderQueue();
+
+        try {
+          const { invoiceId } = await uploadSingleFile(item.file);
+          item.invoiceId = invoiceId;
+          item.status    = "done";
+          succeeded++;
+        } catch (err) {
+          item.status = "error";
+          item.error  = err.message || "Unknown error";
+          failed++;
         }
 
-        result.textContent = "Creating invoice record...";
-
-        const { data: invoiceRow, error: insertError } = await supabase
-          .from("ap_invoices")
-          .insert({
-            file_name: file.name,
-            storage_path: storagePath,
-            status: "uploaded",
-            review_status: "unreviewed"
-          })
-          .select()
-          .single();
-
-        if (insertError) {
-          throw insertError;
-        }
-
-        result.textContent = "Queueing invoice for processing...";
-
-        const response = await fetch(
-          `${supabaseUrl}/functions/v1/enqueue-invoice`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${supabaseAnonKey}`
-            },
-            body: JSON.stringify({
-              invoiceId: invoiceRow.id
-            })
-          }
-        );
-
-        const queueResult = await response.json();
-
-        if (!response.ok) {
-          throw new Error(queueResult?.error || "Failed to queue invoice.");
-        }
-
-        result.textContent = JSON.stringify(
-          {
-            success: true,
-            message: "Invoice uploaded and queued for processing.",
-            invoiceId: invoiceRow.id,
-            storagePath,
-            queueResult
-          },
-          null,
-          2
-        );
-      } catch (err) {
-        result.textContent = JSON.stringify(
-          {
-            success: false,
-            error: err.message || "Unknown error"
-          },
-          null,
-          2
-        );
+        completed++;
+        updateProgress(completed, total);
+        renderQueue();
       }
-    });
+
+      isUploading = false;
+      clearQueueBtn.disabled = false;
+      batchProgress.classList.remove("visible");
+
+      showBatchResult(succeeded, failed, total);
+      loadHistory();
+
+      const remaining = fileQueue.filter(i => i.status === "pending").length;
+      uploadBtn.disabled = remaining === 0;
+    }
+
+    async function uploadSingleFile(file) {
+      // 1 — Storage upload
+      const timestamp   = Date.now();
+      const safeName    = file.name.replace(/\s+/g, "_");
+      const storagePath = `manual-tests/${timestamp}-${safeName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("ap-invoices")
+        .upload(storagePath, file, { contentType: file.type || "application/pdf", upsert: false });
+
+      if (uploadError) throw new Error(`Storage: ${uploadError.message}`);
+
+      // 2 — Invoice record
+      const { data: invoiceRow, error: insertError } = await supabase
+        .from("ap_invoices")
+        .insert({ file_name: file.name, storage_path: storagePath, status: "uploaded", review_status: "unreviewed" })
+        .select()
+        .single();
+
+      if (insertError) throw new Error(`Record: ${insertError.message}`);
+
+      // 3 — Enqueue
+      const response = await fetch(`${supabaseUrl}/functions/v1/enqueue-invoice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseAnonKey}` },
+        body: JSON.stringify({ invoiceId: invoiceRow.id })
+      });
+
+      const queueResult = await response.json();
+      if (!response.ok) throw new Error(queueResult?.error || "Queue failed");
+
+      return { invoiceId: invoiceRow.id };
+    }
+
+    function updateProgress(done, total) {
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      batchProgressBar.style.width = `${pct}%`;
+      batchProgressLabel.textContent = `${done} of ${total} uploaded`;
+    }
+
+    // ── Result ────────────────────────────────────────────────────────────────
+    function clearResult() {
+      resultCard.className    = "result-card";
+      resultTitle.textContent = "";
+      resultStats.innerHTML   = "";
+      resultActions.innerHTML = "";
+    }
+
+    function showBatchResult(succeeded, failed, total) {
+      const allOk   = failed === 0;
+      const allFail = succeeded === 0;
+
+      resultCard.className = allOk ? "result-card success" : allFail ? "result-card error" : "result-card partial";
+
+      resultTitle.textContent = allOk
+        ? `✓ All ${total} invoice${total !== 1 ? "s" : ""} uploaded and queued`
+        : allFail
+          ? `✗ All ${total} upload${total !== 1 ? "s" : ""} failed`
+          : `⚠ ${succeeded} of ${total} uploaded — ${failed} failed`;
+
+      resultStats.innerHTML = `
+        <div class="result-stat stat-ok"><strong>${succeeded}</strong> succeeded</div>
+        ${failed > 0 ? `<div class="result-stat stat-fail"><strong>${failed}</strong> failed</div>` : ""}
+        <div class="result-stat"><strong>${total}</strong> total</div>
+      `;
+
+      const doneItems = fileQueue.filter(i => i.status === "done" && i.invoiceId);
+      let actionsHtml = `<a class="result-btn result-btn-primary" href="./ap-review.html">View in Review Queue →</a>`;
+      if (doneItems.length === 1) {
+        actionsHtml += `<a class="result-btn" href="./ap-invoice.html?id=${doneItems[0].invoiceId}">Open Invoice →</a>`;
+      }
+      if (failed > 0) {
+        actionsHtml += `<button class="result-btn" id="retryFailedBtn" type="button">↻ Retry Failed (${failed})</button>`;
+      }
+      actionsHtml += `<button class="result-btn" id="uploadMoreBtn" type="button">Upload More</button>`;
+      resultActions.innerHTML = actionsHtml;
+
+      document.getElementById("uploadMoreBtn")?.addEventListener("click", () => {
+        fileQueue = fileQueue.filter(i => i.status !== "done");
+        renderQueue();
+        clearResult();
+        batchProgress.classList.remove("visible");
+      });
+
+      document.getElementById("retryFailedBtn")?.addEventListener("click", () => {
+        fileQueue.forEach(item => { if (item.status === "error") { item.status = "pending"; item.error = null; } });
+        renderQueue();
+        clearResult();
+      });
+    }
+
+    // ── History ───────────────────────────────────────────────────────────────
+    async function loadHistory() {
+      historyContainer.innerHTML = `<div class="history-empty">Loading…</div>`;
+
+      const { data, error } = await supabase
+        .from("ap_invoices")
+        .select("id, file_name, status, review_status, total_invoice, created_at, vendor")
+        .order("created_at", { ascending: false })
+        .limit(15);
+
+      if (error) { historyContainer.innerHTML = `<div class="history-empty">Failed to load: ${escapeHtml(error.message)}</div>`; return; }
+      if (!data?.length) { historyContainer.innerHTML = `<div class="history-empty">No invoices uploaded yet.</div>`; return; }
+
+      historyContainer.innerHTML = `<div class="history-list">${data.map(renderHistoryItem).join("")}</div>`;
+    }
+
+    function renderHistoryItem(invoice) {
+      const age        = formatAge(invoice.created_at);
+      const vendor     = invoice.vendor ? escapeHtml(invoice.vendor) : `<span style="color:var(--muted);">Pending extraction</span>`;
+      const total      = invoice.total_invoice ? formatCurrency(invoice.total_invoice) : "—";
+
+      return `
+        <div class="history-item">
+          <div class="history-item-left">
+            <div class="history-filename">${escapeHtml(invoice.file_name || "Unknown file")}</div>
+            <div class="history-meta"><span>${vendor}</span><span>${total}</span><span>${age}</span></div>
+          </div>
+          <div class="history-actions">
+            ${statusBadge(invoice.status)}
+            ${reviewBadge(invoice.review_status)}
+            <a class="history-open-btn" href="./ap-invoice.html?id=${invoice.id}">Open →</a>
+          </div>
+        </div>
+      `;
+    }
+
+    refreshHistoryBtn.addEventListener("click", loadHistory);
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function statusBadge(s) {
+      s = String(s || "").toLowerCase();
+      if (s === "approved")     return `<span class="status-pill pill-green">Approved</span>`;
+      if (s === "needs_review") return `<span class="status-pill pill-yellow">Needs Review</span>`;
+      if (s === "failed")       return `<span class="status-pill pill-red">Failed</span>`;
+      if (s === "queued" || s === "extracting") return `<span class="status-pill pill-blue">${s.charAt(0).toUpperCase()+s.slice(1)}</span>`;
+      if (s === "duplicate")    return `<span class="status-pill pill-blue">Duplicate</span>`;
+      return `<span class="status-pill pill-muted">${escapeHtml(s || "uploaded")}</span>`;
+    }
+
+    function reviewBadge(s) {
+      s = String(s || "").toLowerCase();
+      if (s === "approved")   return `<span class="status-pill pill-green">Reviewed</span>`;
+      if (s === "in_review")  return `<span class="status-pill pill-yellow">In Review</span>`;
+      if (s === "rejected")   return `<span class="status-pill pill-red">Rejected</span>`;
+      if (s === "unreviewed") return `<span class="status-pill pill-muted">Unreviewed</span>`;
+      return "";
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes < 1024)    return `${bytes} B`;
+      if (bytes < 1048576) return `${(bytes/1024).toFixed(1)} KB`;
+      return `${(bytes/1048576).toFixed(1)} MB`;
+    }
+
+    function formatAge(dateStr) {
+      if (!dateStr) return "";
+      const d = Math.floor((Date.now() - new Date(dateStr)) / 60000);
+      if (d < 1)   return "just now";
+      if (d < 60)  return `${d}m ago`;
+      if (d < 1440) return `${Math.floor(d/60)}h ago`;
+      return `${Math.floor(d/1440)}d ago`;
+    }
+
+    function formatCurrency(value) {
+      return Number(value||0).toLocaleString("en-US", { style:"currency", currency:"USD" });
+    }
+
+    function escapeHtml(value) {
+      return String(value).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");
+    }
+
+    // ── Boot ──────────────────────────────────────────────────────────────────
+    loadHistory();
   </script>
 </body>
 </html>
