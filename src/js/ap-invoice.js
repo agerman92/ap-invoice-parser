@@ -248,8 +248,10 @@ function buildPOLineMatches(invoiceLines, poLines) {
         qtyMatch: true,
         priceMatch: true,
         totalMatch: true,
+        invoiceQty,
         invoiceUnitPrice,
         invoiceLineTotal,
+        poQty: null,
         poUnitCost: null,
         poLineTotal: null,
         unitVariance: null,
@@ -266,8 +268,10 @@ function buildPOLineMatches(invoiceLines, poLines) {
         qtyMatch: false,
         priceMatch: false,
         totalMatch: false,
+        invoiceQty,
         invoiceUnitPrice,
         invoiceLineTotal,
+        poQty: null,
         poUnitCost: null,
         poLineTotal: null,
         unitVariance: null,
@@ -289,8 +293,10 @@ function buildPOLineMatches(invoiceLines, poLines) {
       qtyMatch,
       priceMatch,
       totalMatch,
+      invoiceQty,
       invoiceUnitPrice,
       invoiceLineTotal,
+      poQty,
       poUnitCost,
       poLineTotal,
       unitVariance: roundCurrency(invoiceUnitPrice - poUnitCost),
@@ -347,6 +353,23 @@ function getReconBadge(match) {
   if (!match.totalMatch) issues.push("total");
 
   return `<div style="margin-top:6px;font-size:11px;color:#f59e0b;font-weight:700;">PO recon: MISMATCH (${issues.join(", ")})</div>`;
+}
+
+function getDuplicatePartNumbers(lines) {
+  const counts = new Map();
+
+  for (const line of lines) {
+    const key = String(line.part_number || "").trim().toUpperCase();
+    if (!key || key === "NULL") continue;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  const duplicates = new Set();
+  for (const [key, count] of counts.entries()) {
+    if (count > 1) duplicates.add(key);
+  }
+
+  return duplicates;
 }
 
 function formatReconCurrency(value) {
