@@ -66,7 +66,6 @@ async function loadInvoices(showRefreshing = false) {
       review_status,
       duplicate_status,
       created_at,
-      updated_at,
       warnings,
       exception_flags,
       exception_count,
@@ -153,7 +152,7 @@ function applySort(rows) {
     } else if (sortCol === "warnings") {
       valA = Array.isArray(a.warnings) ? a.warnings.length : 0;
       valB = Array.isArray(b.warnings) ? b.warnings.length : 0;
-    } else if (sortCol === "created_at" || sortCol === "updated_at") {
+    } else if (sortCol === "created_at") {
       valA = valA ? new Date(valA).getTime() : 0;
       valB = valB ? new Date(valB).getTime() : 0;
     } else {
