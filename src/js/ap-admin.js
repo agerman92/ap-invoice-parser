@@ -1,120 +1,134 @@
 import { supabase } from "../lib/supabaseClient.js";
 
-const statusMessage = document.getElementById("statusMessage");
-const refreshButton = document.getElementById("refreshButton");
+// ─── DOM refs ────────────────────────────────────────────────────────────────
+const statusMessage      = document.getElementById("statusMessage");
+const refreshButton      = document.getElementById("refreshButton");
 const applyFiltersButton = document.getElementById("applyFiltersButton");
 const clearFiltersButton = document.getElementById("clearFiltersButton");
+const refreshDot         = document.getElementById("refreshDot");
+const refreshLabel       = document.getElementById("refreshLabel");
 
-const datePreset = document.getElementById("datePreset");
-const dateFrom = document.getElementById("dateFrom");
-const dateTo = document.getElementById("dateTo");
+const datePreset   = document.getElementById("datePreset");
+const dateFrom     = document.getElementById("dateFrom");
+const dateTo       = document.getElementById("dateTo");
 const statusFilter = document.getElementById("statusFilter");
 const vendorFilter = document.getElementById("vendorFilter");
 
-const queuedJobs = document.getElementById("queuedJobs");
-const retryJobs = document.getElementById("retryJobs");
-const failedJobs = document.getElementById("failedJobs");
+const queuedJobs         = document.getElementById("queuedJobs");
+const retryJobs          = document.getElementById("retryJobs");
+const failedJobs         = document.getElementById("failedJobs");
 const needsReviewInvoices = document.getElementById("needsReviewInvoices");
-const criticalInvoices = document.getElementById("criticalInvoices");
-const approvedToday = document.getElementById("approvedToday");
-const duplicateInvoices = document.getElementById("duplicateInvoices");
+const criticalInvoices   = document.getElementById("criticalInvoices");
+const approvedToday      = document.getElementById("approvedToday");
+const duplicateInvoices  = document.getElementById("duplicateInvoices");
 const failedExtractions7d = document.getElementById("failedExtractions7d");
 
-const reviewDollars = document.getElementById("reviewDollars");
-const approvedDollars = document.getElementById("approvedDollars");
+const reviewDollars    = document.getElementById("reviewDollars");
+const approvedDollars  = document.getElementById("approvedDollars");
 const duplicateDollars = document.getElementById("duplicateDollars");
-const failedDollars = document.getElementById("failedDollars");
+const failedDollars    = document.getElementById("failedDollars");
 const avgInvoiceAmount = document.getElementById("avgInvoiceAmount");
-const highRiskDollars = document.getElementById("highRiskDollars");
+const highRiskDollars  = document.getElementById("highRiskDollars");
 
 const needsReviewTrend = document.getElementById("needsReviewTrend");
-const criticalTrend = document.getElementById("criticalTrend");
-const approvedTrend = document.getElementById("approvedTrend");
-const duplicateTrend = document.getElementById("duplicateTrend");
+const criticalTrend    = document.getElementById("criticalTrend");
+const approvedTrend    = document.getElementById("approvedTrend");
+const duplicateTrend   = document.getElementById("duplicateTrend");
 
-const jobIssuesTableBody = document.getElementById("jobIssuesTableBody");
-const topFlagsTableBody = document.getElementById("topFlagsTableBody");
-const topVendorsTableBody = document.getElementById("topVendorsTableBody");
+const jobIssuesTableBody           = document.getElementById("jobIssuesTableBody");
+const topFlagsTableBody            = document.getElementById("topFlagsTableBody");
+const topVendorsTableBody          = document.getElementById("topVendorsTableBody");
 const highPriorityInvoicesTableBody = document.getElementById("highPriorityInvoicesTableBody");
 
-const cardNeedsReview = document.getElementById("cardNeedsReview");
-const cardCritical = document.getElementById("cardCritical");
-const cardApprovedToday = document.getElementById("cardApprovedToday");
-const cardDuplicate = document.getElementById("cardDuplicate");
-const cardReviewDollars = document.getElementById("cardReviewDollars");
-const cardApprovedDollars = document.getElementById("cardApprovedDollars");
+const cardNeedsReview    = document.getElementById("cardNeedsReview");
+const cardCritical       = document.getElementById("cardCritical");
+const cardApprovedToday  = document.getElementById("cardApprovedToday");
+const cardDuplicate      = document.getElementById("cardDuplicate");
+const cardReviewDollars  = document.getElementById("cardReviewDollars");
+const cardApprovedDollars  = document.getElementById("cardApprovedDollars");
 const cardDuplicateDollars = document.getElementById("cardDuplicateDollars");
-const cardFailedDollars = document.getElementById("cardFailedDollars");
+const cardFailedDollars  = document.getElementById("cardFailedDollars");
 const cardHighRiskDollars = document.getElementById("cardHighRiskDollars");
 
+// ─── State ───────────────────────────────────────────────────────────────────
 let allInvoicesCache = [];
 
-refreshButton.addEventListener("click", loadDashboard);
-applyFiltersButton.addEventListener("click", loadDashboard);
+// ─── Event wiring ────────────────────────────────────────────────────────────
+refreshButton.addEventListener("click",      () => loadDashboard());
+applyFiltersButton.addEventListener("click", () => loadDashboard());
 clearFiltersButton.addEventListener("click", clearFilters);
-datePreset.addEventListener("change", handleDatePresetChange);
+datePreset.addEventListener("change",        handleDatePresetChange);
+dateFrom.addEventListener("change",          () => { datePreset.value = "custom"; });
+dateTo.addEventListener("change",            () => { datePreset.value = "custom"; });
 
-cardNeedsReview.addEventListener("click", () => openApReviewWithFilters({ status: "needs_review" }));
-cardCritical.addEventListener("click", () => openApReviewWithFilters({ minPriority: 80 }));
-cardApprovedToday.addEventListener("click", () => openApReviewWithFilters({ review: "approved" }));
-cardDuplicate.addEventListener("click", () => openApReviewWithFilters({ duplicate: "confirmed" }));
+// Clickable metric cards → drill into AP Review
+cardNeedsReview.addEventListener("click",     () => openReview({ status: "needs_review" }));
+cardCritical.addEventListener("click",        () => openReview({ minPriority: 80 }));
+cardApprovedToday.addEventListener("click",   () => openReview({ review: "approved" }));
+cardDuplicate.addEventListener("click",       () => openReview({ duplicate: "confirmed" }));
+cardReviewDollars.addEventListener("click",   () => openReview({ status: "needs_review" }));
+cardApprovedDollars.addEventListener("click", () => openReview({ review: "approved" }));
+cardDuplicateDollars.addEventListener("click",() => openReview({ status: "duplicate" }));
+cardFailedDollars.addEventListener("click",   () => openReview({ status: "failed" }));
+cardHighRiskDollars.addEventListener("click", () => openReview({ minPriority: 80 }));
 
-cardReviewDollars.addEventListener("click", () => openApReviewWithFilters({ status: "needs_review" }));
-cardApprovedDollars.addEventListener("click", () => openApReviewWithFilters({ review: "approved" }));
-cardDuplicateDollars.addEventListener("click", () => openApReviewWithFilters({ status: "duplicate" }));
-cardFailedDollars.addEventListener("click", () => openApReviewWithFilters({ status: "failed" }));
-cardHighRiskDollars.addEventListener("click", () => openApReviewWithFilters({ minPriority: 80 }));
-
+// ─── Init ────────────────────────────────────────────────────────────────────
 initDefaultDates();
 loadDashboard();
 
+// ─── Date helpers ────────────────────────────────────────────────────────────
 function initDefaultDates() {
   const end = new Date();
   const start = new Date();
   start.setDate(end.getDate() - 29);
-
   dateFrom.value = toDateInputValue(start);
-  dateTo.value = toDateInputValue(end);
+  dateTo.value   = toDateInputValue(end);
 }
 
 function handleDatePresetChange() {
   if (datePreset.value === "custom") return;
-
-  const days = Number(datePreset.value || 30);
-  const end = new Date();
+  const days  = Number(datePreset.value || 30);
+  const end   = new Date();
   const start = new Date();
   start.setDate(end.getDate() - (days - 1));
-
   dateFrom.value = toDateInputValue(start);
-  dateTo.value = toDateInputValue(end);
+  dateTo.value   = toDateInputValue(end);
 }
 
 function clearFilters() {
-  datePreset.value = "30";
+  datePreset.value   = "30";
   statusFilter.value = "";
   vendorFilter.value = "";
   initDefaultDates();
   loadDashboard();
 }
 
-async function loadDashboard() {
+// ─── Main load ───────────────────────────────────────────────────────────────
+async function loadDashboard(silent = false) {
   try {
-    statusMessage.textContent = "Loading dashboard...";
+    if (silent) {
+      refreshDot.classList.add("refreshing");
+    } else {
+      statusMessage.textContent = "Loading dashboard…";
+      refreshDot.classList.add("refreshing");
+    }
 
     const filterState = getFilterState();
 
     const [
-      queuedJobsCount,
-      retryJobsCount,
-      failedJobsCount,
-      failedExtractionCount,
+      queuedCount,
+      retryCount,
+      failedCount,
+      failedExtrCount,
       issueJobsResult,
       allInvoicesResult
     ] = await Promise.all([
       getCount("ap_invoice_jobs", (q) => q.eq("status", "queued")),
       getCount("ap_invoice_jobs", (q) => q.eq("status", "retry")),
       getCount("ap_invoice_jobs", (q) => q.eq("status", "failed")),
-      getCount("ap_invoice_extractions", (q) => q.eq("status", "failed").gte("created_at", sevenDaysAgoIso())),
+      getCount("ap_invoice_extractions", (q) =>
+        q.eq("status", "failed").gte("created_at", sevenDaysAgoIso())
+      ),
       supabase
         .from("ap_invoice_jobs")
         .select("id, invoice_id, status, attempt_count, last_error, updated_at")
@@ -124,10 +138,15 @@ async function loadDashboard() {
       loadInvoicesForDateWindow(filterState.fromIso, filterState.toIsoExclusive)
     ]);
 
-    queuedJobs.textContent = String(queuedJobsCount);
-    retryJobs.textContent = String(retryJobsCount);
-    failedJobs.textContent = String(failedJobsCount);
-    failedExtractions7d.textContent = String(failedExtractionCount);
+    refreshDot.classList.remove("refreshing");
+
+    const now = new Date();
+    refreshLabel.textContent = `Last refreshed ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+
+    queuedJobs.textContent        = String(queuedCount);
+    retryJobs.textContent         = String(retryCount);
+    failedJobs.textContent        = String(failedCount);
+    failedExtractions7d.textContent = String(failedExtrCount);
 
     if (issueJobsResult.error) throw issueJobsResult.error;
     renderIssueJobs(issueJobsResult.data || []);
@@ -137,19 +156,20 @@ async function loadDashboard() {
     allInvoicesCache = allInvoicesResult.data || [];
     populateVendorFilter(allInvoicesCache);
 
-    const filteredInvoices = applyLocalFilters(allInvoicesCache, filterState);
-    const priorInvoices = filterPriorPeriod(allInvoicesCache, filterState);
+    const filtered = applyLocalFilters(allInvoicesCache, filterState);
+    const prior    = filterPriorPeriod(allInvoicesCache, filterState);
 
-    renderHeadlineMetrics(filteredInvoices, priorInvoices);
-    renderFinancials(filteredInvoices);
-    renderTopFlags(filteredInvoices);
-    renderTopVendors(filteredInvoices);
-    renderHighPriorityInvoices(filteredInvoices);
+    renderHeadlineMetrics(filtered, prior);
+    renderFinancials(filtered);
+    renderTopFlags(filtered);
+    renderTopVendors(filtered);
+    renderHighPriorityInvoices(filtered);
 
-    statusMessage.textContent = `Dashboard loaded. ${filteredInvoices.length} invoice(s) in current filter set.`;
+    statusMessage.textContent = `Dashboard loaded · ${filtered.length} invoice${filtered.length !== 1 ? "s" : ""} in current window`;
   } catch (error) {
+    refreshDot.classList.remove("refreshing");
     console.error("Dashboard load failed:", error);
-    statusMessage.textContent = `Dashboard load failed: ${error.message}`;
+    statusMessage.textContent = `Load failed: ${error.message}`;
   }
 }
 
@@ -174,146 +194,128 @@ async function loadInvoicesForDateWindow(fromIso, toIsoExclusive) {
     .limit(10000);
 }
 
+// ─── Filter state ────────────────────────────────────────────────────────────
 function getFilterState() {
   const from = dateFrom.value ? new Date(`${dateFrom.value}T00:00:00`) : new Date();
-  const to = dateTo.value ? new Date(`${dateTo.value}T00:00:00`) : new Date();
+  const to   = dateTo.value   ? new Date(`${dateTo.value}T00:00:00`)   : new Date();
 
   const toExclusive = new Date(to);
   toExclusive.setDate(toExclusive.getDate() + 1);
 
   return {
-    fromIso: from.toISOString(),
-    toIsoExclusive: toExclusive.toISOString(),
-    fromDate: from,
-    toDateExclusive: toExclusive,
-    status: statusFilter.value || "",
-    vendor: vendorFilter.value || ""
+    fromIso:          from.toISOString(),
+    toIsoExclusive:   toExclusive.toISOString(),
+    fromDate:         from,
+    toDateExclusive:  toExclusive,
+    status:           statusFilter.value || "",
+    vendor:           vendorFilter.value || ""
   };
 }
 
 function applyLocalFilters(rows, filterState) {
   return rows.filter((row) => {
-    if (filterState.status && row.status !== filterState.status) return false;
+    if (filterState.status && row.status         !== filterState.status) return false;
     if (filterState.vendor && (row.vendor || "") !== filterState.vendor) return false;
     return true;
   });
 }
 
 function filterPriorPeriod(rows, filterState) {
-  const currentStart = filterState.fromDate;
-  const currentEndExclusive = filterState.toDateExclusive;
-  const windowMs = currentEndExclusive.getTime() - currentStart.getTime();
-
-  const priorStart = new Date(currentStart.getTime() - windowMs);
-  const priorEndExclusive = new Date(currentStart.getTime());
+  const windowMs         = filterState.toDateExclusive.getTime() - filterState.fromDate.getTime();
+  const priorStart       = new Date(filterState.fromDate.getTime() - windowMs);
+  const priorEndExclusive = new Date(filterState.fromDate.getTime());
 
   return rows.filter((row) => {
     const created = new Date(row.created_at);
     if (created < priorStart || created >= priorEndExclusive) return false;
-    if (filterState.status && row.status !== filterState.status) return false;
+    if (filterState.status && row.status         !== filterState.status) return false;
     if (filterState.vendor && (row.vendor || "") !== filterState.vendor) return false;
     return true;
   });
 }
 
+// ─── Renderers ───────────────────────────────────────────────────────────────
 function renderHeadlineMetrics(currentRows, priorRows) {
-  const needsReviewCurrent = currentRows.filter((i) => i.status === "needs_review").length;
-  const needsReviewPrior = priorRows.filter((i) => i.status === "needs_review").length;
+  const nrCurr = currentRows.filter(i => i.status === "needs_review").length;
+  const nrPrior = priorRows.filter(i => i.status === "needs_review").length;
 
-  const criticalCurrent = currentRows.filter((i) => Number(i.review_priority || 0) >= 80).length;
-  const criticalPrior = priorRows.filter((i) => Number(i.review_priority || 0) >= 80).length;
+  const crCurr = currentRows.filter(i => Number(i.review_priority || 0) >= 80).length;
+  const crPrior = priorRows.filter(i => Number(i.review_priority || 0) >= 80).length;
 
-  const approvedCurrent = currentRows.filter((i) => i.review_status === "approved").length;
-  const approvedPrior = priorRows.filter((i) => i.review_status === "approved").length;
+  const apCurr = currentRows.filter(i => i.review_status === "approved").length;
+  const apPrior = priorRows.filter(i => i.review_status === "approved").length;
 
-  const duplicateCurrent = currentRows.filter((i) => i.status === "duplicate").length;
-  const duplicatePrior = priorRows.filter((i) => i.status === "duplicate").length;
+  const dupCurr = currentRows.filter(i => i.status === "duplicate").length;
+  const dupPrior = priorRows.filter(i => i.status === "duplicate").length;
 
-  needsReviewInvoices.textContent = String(needsReviewCurrent);
-  criticalInvoices.textContent = String(criticalCurrent);
-  approvedToday.textContent = String(approvedCurrent);
-  duplicateInvoices.textContent = String(duplicateCurrent);
+  needsReviewInvoices.textContent = String(nrCurr);
+  criticalInvoices.textContent    = String(crCurr);
+  approvedToday.textContent       = String(apCurr);
+  duplicateInvoices.textContent   = String(dupCurr);
 
-  renderTrend(needsReviewTrend, needsReviewCurrent, needsReviewPrior);
-  renderTrend(criticalTrend, criticalCurrent, criticalPrior);
-  renderTrend(approvedTrend, approvedCurrent, approvedPrior);
-  renderTrend(duplicateTrend, duplicateCurrent, duplicatePrior);
+  renderTrend(needsReviewTrend, nrCurr,  nrPrior);
+  renderTrend(criticalTrend,    crCurr,  crPrior);
+  renderTrend(approvedTrend,    apCurr,  apPrior);
+  renderTrend(duplicateTrend,   dupCurr, dupPrior);
 }
 
-function renderTrend(el, currentValue, priorValue) {
+function renderTrend(el, current, prior) {
   if (!el) return;
+  if (prior === 0 && current === 0) { el.textContent = "—";     el.className = "trend-flat"; return; }
+  if (prior === 0 && current > 0)   { el.textContent = "new";   el.className = "trend-up";   return; }
 
-  if (priorValue === 0 && currentValue === 0) {
-    el.textContent = "0%";
-    el.className = "trend-flat";
-    return;
-  }
-
-  if (priorValue === 0 && currentValue > 0) {
-    el.textContent = "+100%";
-    el.className = "trend-up";
-    return;
-  }
-
-  const pct = ((currentValue - priorValue) / Math.abs(priorValue || 1)) * 100;
+  const pct     = ((current - prior) / Math.abs(prior)) * 100;
   const rounded = `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
-
   el.textContent = rounded;
-  if (pct > 0.1) el.className = "trend-up";
-  else if (pct < -0.1) el.className = "trend-down";
-  else el.className = "trend-flat";
+  el.className   = pct > 0.1 ? "trend-up" : pct < -0.1 ? "trend-down" : "trend-flat";
 }
 
 function renderFinancials(invoices) {
-  const reviewSet = invoices.filter((i) => i.status === "needs_review");
-  const approvedSet = invoices.filter((i) => i.review_status === "approved");
-  const duplicateSet = invoices.filter((i) => i.status === "duplicate");
-  const failedSet = invoices.filter((i) => i.status === "failed");
-  const highRiskSet = invoices.filter((i) => Number(i.review_priority || 0) >= 80);
+  const reviewSet   = invoices.filter(i => i.status === "needs_review");
+  const approvedSet = invoices.filter(i => i.review_status === "approved");
+  const dupSet      = invoices.filter(i => i.status === "duplicate");
+  const failedSet   = invoices.filter(i => i.status === "failed");
+  const highRiskSet = invoices.filter(i => Number(i.review_priority || 0) >= 80);
 
   const allDollars = sumTotals(invoices);
-  const reviewTotal = sumTotals(reviewSet);
-  const approvedTotal = sumTotals(approvedSet);
-  const duplicateTotal = sumTotals(duplicateSet);
-  const failedTotal = sumTotals(failedSet);
-  const highRiskTotal = sumTotals(highRiskSet);
-  const avg = invoices.length ? allDollars / invoices.length : 0;
+  const avg        = invoices.length ? allDollars / invoices.length : 0;
 
-  reviewDollars.textContent = formatCurrency(reviewTotal);
-  approvedDollars.textContent = formatCurrency(approvedTotal);
-  duplicateDollars.textContent = formatCurrency(duplicateTotal);
-  failedDollars.textContent = formatCurrency(failedTotal);
+  reviewDollars.textContent    = formatCurrency(sumTotals(reviewSet));
+  approvedDollars.textContent  = formatCurrency(sumTotals(approvedSet));
+  duplicateDollars.textContent = formatCurrency(sumTotals(dupSet));
+  failedDollars.textContent    = formatCurrency(sumTotals(failedSet));
   avgInvoiceAmount.textContent = formatCurrency(avg);
-  highRiskDollars.textContent = formatCurrency(highRiskTotal);
+  highRiskDollars.textContent  = formatCurrency(sumTotals(highRiskSet));
 }
 
 function renderIssueJobs(rows) {
   if (!rows.length) {
-    jobIssuesTableBody.innerHTML = `
-      <tr>
-        <td colspan="5">No retry/failed jobs found.</td>
-      </tr>
-    `;
+    jobIssuesTableBody.innerHTML = emptyRow(5, "No retry/failed jobs — queue is healthy ✓");
     return;
   }
 
-  jobIssuesTableBody.innerHTML = rows.map((row) => `
-    <tr>
-      <td>${row.id}</td>
-      <td>${renderStatusPill(row.status)}</td>
-      <td>${Number(row.attempt_count || 0)}</td>
-      <td>${escapeHtml(row.last_error || "")}</td>
-      <td>${formatDateTime(row.updated_at)}</td>
-    </tr>
-  `).join("");
+  jobIssuesTableBody.innerHTML = rows.map((row) => {
+    const invoiceLink = row.invoice_id
+      ? `<a class="table-open-btn" href="./ap-invoice.html?id=${escapeHtml(row.invoice_id)}">Open →</a>`
+      : "—";
+
+    return `
+      <tr>
+        <td>${renderStatusPill(row.status)}</td>
+        <td style="text-align:center;">${Number(row.attempt_count || 0)}</td>
+        <td style="font-size:11px; max-width:280px; word-break:break-word;">${escapeHtml(row.last_error || "—")}</td>
+        <td style="font-size:11px; white-space:nowrap;">${formatDateTime(row.updated_at)}</td>
+        <td>${invoiceLink}</td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function renderTopFlags(rows) {
   const counts = new Map();
 
   for (const row of rows) {
-    const flags = Array.isArray(row.exception_flags) ? row.exception_flags : [];
-    for (const flag of flags) {
+    for (const flag of (Array.isArray(row.exception_flags) ? row.exception_flags : [])) {
       const code = flag?.code || "UNKNOWN";
       counts.set(code, (counts.get(code) || 0) + 1);
     }
@@ -324,20 +326,20 @@ function renderTopFlags(rows) {
     .slice(0, 15);
 
   if (!sorted.length) {
-    topFlagsTableBody.innerHTML = `
-      <tr>
-        <td colspan="2">No exception flags found.</td>
-      </tr>
-    `;
+    topFlagsTableBody.innerHTML = emptyRow(3, "No exception flags in this window.");
     return;
   }
 
-  topFlagsTableBody.innerHTML = sorted.map(([code, count]) => `
-    <tr>
-      <td>${escapeHtml(code)}</td>
-      <td>${count}</td>
-    </tr>
-  `).join("");
+  topFlagsTableBody.innerHTML = sorted.map(([code, count]) => {
+    const label = formatFlagLabel(code);
+    return `
+      <tr class="clickable-row" onclick="openReviewByFlag('${escapeHtml(code)}')">
+        <td>${escapeHtml(label)}</td>
+        <td style="text-align:center; font-weight:bold;">${count}</td>
+        <td><span class="table-open-btn">View →</span></td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function renderTopVendors(invoices) {
@@ -345,10 +347,10 @@ function renderTopVendors(invoices) {
 
   for (const invoice of invoices) {
     const vendor = (invoice.vendor || "Unknown Vendor").trim() || "Unknown Vendor";
-    const current = vendorMap.get(vendor) || { count: 0, total: 0 };
-    current.count += 1;
-    current.total += Number(invoice.total_invoice || 0);
-    vendorMap.set(vendor, current);
+    const curr   = vendorMap.get(vendor) || { count: 0, total: 0 };
+    curr.count  += 1;
+    curr.total  += Number(invoice.total_invoice || 0);
+    vendorMap.set(vendor, curr);
   }
 
   const sorted = Array.from(vendorMap.entries())
@@ -357,26 +359,23 @@ function renderTopVendors(invoices) {
     .slice(0, 15);
 
   if (!sorted.length) {
-    topVendorsTableBody.innerHTML = `
-      <tr>
-        <td colspan="3">No vendor data found.</td>
-      </tr>
-    `;
+    topVendorsTableBody.innerHTML = emptyRow(4, "No vendor data in this window.");
     return;
   }
 
   topVendorsTableBody.innerHTML = sorted.map((row) => `
-    <tr>
+    <tr class="clickable-row" onclick="openReviewByVendor('${escapeHtml(row.vendor)}')">
       <td>${escapeHtml(row.vendor)}</td>
-      <td>${row.count}</td>
-      <td>${formatCurrency(row.total)}</td>
+      <td style="text-align:center;">${row.count}</td>
+      <td style="text-align:right; font-weight:bold;">${formatCurrency(row.total)}</td>
+      <td><span class="table-open-btn">View →</span></td>
     </tr>
   `).join("");
 }
 
 function renderHighPriorityInvoices(rows) {
   const filtered = rows
-    .filter((row) => Number(row.review_priority || 0) >= 50)
+    .filter(r => Number(r.review_priority || 0) >= 50)
     .sort((a, b) => {
       const p = Number(b.review_priority || 0) - Number(a.review_priority || 0);
       if (p !== 0) return p;
@@ -385,73 +384,97 @@ function renderHighPriorityInvoices(rows) {
     .slice(0, 20);
 
   if (!filtered.length) {
-    highPriorityInvoicesTableBody.innerHTML = `
-      <tr>
-        <td colspan="5">No high-priority invoices found.</td>
-      </tr>
-    `;
+    highPriorityInvoicesTableBody.innerHTML = emptyRow(5, "No high-priority invoices in this window.");
     return;
   }
 
   highPriorityInvoicesTableBody.innerHTML = filtered.map((row) => `
-    <tr>
+    <tr class="clickable-row" onclick="window.location.href='./ap-invoice.html?id=${row.id}'">
       <td>${renderPriorityPill(row.review_priority)}</td>
       <td>${escapeHtml(row.vendor || "")}</td>
-      <td>${escapeHtml(row.invoice_number || "")}</td>
-      <td>${formatCurrency(row.total_invoice)}</td>
-      <td>${escapeHtml(row.status || "")}</td>
+      <td style="font-size:12px;">${escapeHtml(row.invoice_number || "")}</td>
+      <td style="white-space:nowrap;">${formatCurrency(row.total_invoice)}</td>
+      <td>${renderStatusPill(row.status)}</td>
     </tr>
   `).join("");
 }
 
+// ─── Vendor filter ────────────────────────────────────────────────────────────
 function populateVendorFilter(rows) {
   const currentValue = vendorFilter.value;
   const vendors = Array.from(
-    new Set(
-      rows
-        .map((row) => (row.vendor || "").trim())
-        .filter(Boolean)
-    )
+    new Set(rows.map(r => (r.vendor || "").trim()).filter(Boolean))
   ).sort((a, b) => a.localeCompare(b));
 
   vendorFilter.innerHTML = `<option value="">All Vendors</option>` +
-    vendors.map((vendor) => `<option value="${escapeHtml(vendor)}">${escapeHtml(vendor)}</option>`).join("");
+    vendors.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
 
   vendorFilter.value = vendors.includes(currentValue) ? currentValue : "";
 }
 
-function openApReviewWithFilters(options = {}) {
+// ─── Navigation helpers ───────────────────────────────────────────────────────
+function openReview(options = {}) {
   const params = new URLSearchParams();
-
-  if (options.status) params.set("status", options.status);
-  if (options.review) params.set("review", options.review);
-  if (options.duplicate) params.set("duplicate", options.duplicate);
-  if (vendorFilter.value) params.set("vendor", vendorFilter.value);
-  if (dateFrom.value) params.set("from", dateFrom.value);
-  if (dateTo.value) params.set("to", dateTo.value);
-  if (options.minPriority) params.set("minPriority", String(options.minPriority));
-
+  if (options.status)      params.set("status",      options.status);
+  if (options.review)      params.set("review",       options.review);
+  if (options.duplicate)   params.set("duplicate",    options.duplicate);
+  if (options.minPriority) params.set("minPriority",  String(options.minPriority));
+  if (vendorFilter.value)  params.set("vendor",       vendorFilter.value);
+  if (dateFrom.value)      params.set("from",         dateFrom.value);
+  if (dateTo.value)        params.set("to",           dateTo.value);
   window.location.href = `./ap-review.html?${params.toString()}`;
 }
 
-async function getCount(tableName, applyFilters) {
+// Exposed to inline onclick handlers in table rows
+window.openReview = openReview;
+
+window.openReviewByVendor = function(vendor) {
+  const params = new URLSearchParams();
+  params.set("vendor", vendor);
+  if (dateFrom.value) params.set("from", dateFrom.value);
+  if (dateTo.value)   params.set("to",   dateTo.value);
+  window.location.href = `./ap-review.html?${params.toString()}`;
+};
+
+window.openReviewByFlag = function(flagCode) {
+  // Best we can do from the review page is open with no filter pre-applied
+  // but show the user context — in future this could be a dedicated flag filter
+  window.location.href = `./ap-review.html`;
+};
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+async function getCount(tableName, applyFilter) {
   let query = supabase.from(tableName).select("*", { count: "exact", head: true });
-  query = applyFilters(query);
+  query = applyFilter(query);
   const { count, error } = await query;
   if (error) throw error;
   return Number(count || 0);
 }
 
 function sumTotals(rows) {
-  return rows.reduce((sum, row) => sum + Number(row.total_invoice || 0), 0);
+  return rows.reduce((sum, r) => sum + Number(r.total_invoice || 0), 0);
+}
+
+function emptyRow(cols, message) {
+  return `<tr class="empty-row"><td colspan="${cols}">${message}</td></tr>`;
+}
+
+function formatFlagLabel(code) {
+  return String(code || "")
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, c => c.toUpperCase());
 }
 
 function renderStatusPill(status) {
   const s = String(status || "").toLowerCase();
-  if (s === "failed") return `<span class="pill pill-red">failed</span>`;
-  if (s === "retry") return `<span class="pill pill-yellow">retry</span>`;
-  if (s === "queued") return `<span class="pill pill-blue">queued</span>`;
-  return `<span class="pill pill-green">${escapeHtml(status || "")}</span>`;
+  if (s === "failed")       return `<span class="pill pill-red">Failed</span>`;
+  if (s === "retry")        return `<span class="pill pill-yellow">Retry</span>`;
+  if (s === "queued")       return `<span class="pill pill-blue">Queued</span>`;
+  if (s === "needs_review") return `<span class="pill pill-yellow">Needs Review</span>`;
+  if (s === "approved")     return `<span class="pill pill-green">Approved</span>`;
+  if (s === "duplicate")    return `<span class="pill pill-purple">Duplicate</span>`;
+  return `<span class="pill pill-blue">${escapeHtml(status || "—")}</span>`;
 }
 
 function renderPriorityPill(priority) {
@@ -469,23 +492,22 @@ function sevenDaysAgoIso() {
 }
 
 function toDateInputValue(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function formatCurrency(value) {
-  const number = Number(value || 0);
-  return number.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD"
-  });
+  return Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
 function formatDateTime(value) {
-  if (!value) return "";
-  return new Date(value).toLocaleString();
+  if (!value) return "—";
+  return new Date(value).toLocaleString([], {
+    month: "short", day: "numeric", year: "2-digit",
+    hour: "2-digit", minute: "2-digit"
+  });
 }
 
 function escapeHtml(value) {

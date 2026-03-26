@@ -9,6 +9,7 @@
       --bg: #0f172a;
       --panel: #111827;
       --panel-2: #1f2937;
+      --panel-3: #172033;
       --border: #334155;
       --text: #e5e7eb;
       --muted: #94a3b8;
@@ -18,90 +19,165 @@
       --blue: #38bdf8;
       --purple: #a78bfa;
       --pink: #f472b6;
+      --shadow: 0 10px 28px rgba(0,0,0,0.2);
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
       font-family: Arial, sans-serif;
-      background: var(--bg);
+      background: linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
       color: var(--text);
-      padding: 20px;
+      padding: 22px;
+      min-height: 100vh;
     }
 
-    a {
-      color: var(--blue);
-    }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    h1, h2, h3 { margin-top: 0; }
 
-    h1, h2, h3 {
-      margin-top: 0;
-    }
-
+    /* ── Top Nav ── */
     .top-nav {
-      margin-bottom: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
     }
 
-    .top-row {
+    .top-nav-left h1 {
+      margin: 0 0 4px 0;
+      font-size: 32px;
+    }
+
+    .top-nav-left .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .nav-link {
+      display: inline-block;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.18);
+      font-weight: bold;
+      font-size: 13px;
+      color: var(--blue);
+      white-space: nowrap;
+    }
+
+    .nav-link:hover {
+      background: rgba(56, 189, 248, 0.14);
+      text-decoration: none;
+    }
+
+    .nav-link-upload {
+      background: rgba(34, 197, 94, 0.08);
+      border-color: rgba(34, 197, 94, 0.22);
+      color: #86efac;
+    }
+
+    .nav-link-upload:hover {
+      background: rgba(34, 197, 94, 0.14);
+    }
+
+    /* ── Status bar ── */
+    .status-bar {
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 12px;
-    }
-
-    .actions {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    button {
-      padding: 10px 14px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--panel-2);
-      color: var(--text);
-      cursor: pointer;
-    }
-
-    button:hover {
-      background: #273449;
-    }
-
-    .status {
       margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+
+    .status-message {
       font-weight: bold;
+      color: #dce8f6;
+      font-size: 14px;
+    }
+
+    .refresh-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
       color: var(--muted);
     }
 
+    .refresh-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+
+    .refresh-dot.refreshing {
+      background: var(--blue);
+      animation: pulse-dot 0.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%,100% { opacity:1; transform:scale(1); }
+      50%      { opacity:0.4; transform:scale(0.7); }
+    }
+
+    /* ── Filter panel ── */
     .filter-panel {
-      background: var(--panel);
+      background: linear-gradient(180deg, var(--panel-3) 0%, var(--panel) 100%);
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 16px;
+      border-radius: 16px;
+      padding: 18px;
       margin-bottom: 20px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+      box-shadow: var(--shadow);
+    }
+
+    .filter-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .filter-panel-header h2 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .filter-actions {
+      display: flex;
+      gap: 8px;
     }
 
     .filter-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
       align-items: end;
     }
 
     .field-group {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 5px;
     }
 
     .field-group label {
-      font-size: 12px;
+      font-size: 11px;
       font-weight: bold;
       text-transform: uppercase;
       color: var(--muted);
@@ -110,16 +186,38 @@
 
     .field-group input,
     .field-group select {
-      padding: 10px 12px;
-      border-radius: 8px;
+      padding: 9px 12px;
+      border-radius: 10px;
       border: 1px solid var(--border);
       background: #0f1828;
       color: var(--text);
+      font-size: 14px;
+      width: 100%;
     }
 
+    .field-group input:focus,
+    .field-group select:focus {
+      outline: none;
+      border-color: rgba(56,189,248,0.4);
+    }
+
+    button {
+      padding: 9px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 13px;
+    }
+
+    button:hover { background: #273449; }
+
+    /* ── Card grid ── */
     .card-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 14px;
       margin-bottom: 20px;
     }
@@ -143,7 +241,7 @@
     }
 
     .card-title {
-      font-size: 12px;
+      font-size: 11px;
       text-transform: uppercase;
       color: var(--muted);
       margin-bottom: 10px;
@@ -158,49 +256,40 @@
     }
 
     .card-sub {
-      margin-top: 8px;
+      margin-top: 6px;
       color: var(--muted);
       font-size: 12px;
     }
 
     .trend-row {
       display: flex;
-      gap: 14px;
+      gap: 8px;
       flex-wrap: wrap;
-      margin-top: 10px;
+      margin-top: 8px;
       font-size: 12px;
       color: var(--muted);
+      align-items: center;
     }
 
-    .trend-up {
-      color: #86efac;
-      font-weight: bold;
-    }
+    .trend-up   { color: #86efac; font-weight: bold; }
+    .trend-flat { color: #cbd5e1; font-weight: bold; }
+    .trend-down { color: #fca5a5; font-weight: bold; }
 
-    .trend-flat {
-      color: #cbd5e1;
-      font-weight: bold;
-    }
-
-    .trend-down {
-      color: #fca5a5;
-      font-weight: bold;
-    }
-
-    .card-green { border-left: 4px solid var(--green); }
+    .card-green  { border-left: 4px solid var(--green); }
     .card-yellow { border-left: 4px solid var(--yellow); }
-    .card-red { border-left: 4px solid var(--red); }
-    .card-blue { border-left: 4px solid var(--blue); }
+    .card-red    { border-left: 4px solid var(--red); }
+    .card-blue   { border-left: 4px solid var(--blue); }
     .card-purple { border-left: 4px solid var(--purple); }
-    .card-pink { border-left: 4px solid var(--pink); }
+    .card-pink   { border-left: 4px solid var(--pink); }
 
+    /* ── Panels ── */
     .panel {
-      background: var(--panel);
+      background: linear-gradient(180deg, var(--panel-3) 0%, var(--panel) 100%);
       border: 1px solid var(--border);
       border-radius: 14px;
       padding: 16px;
       margin-bottom: 20px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+      box-shadow: var(--shadow);
     }
 
     .panel-header {
@@ -212,70 +301,58 @@
       margin-bottom: 12px;
     }
 
-    .muted {
-      color: var(--muted);
-      font-size: 13px;
-    }
+    .panel-header h2 { margin: 0; font-size: 18px; }
 
-    .table-wrap {
-      overflow-x: auto;
-    }
+    .muted { color: var(--muted); font-size: 13px; }
+
+    /* ── Tables ── */
+    .table-wrap { overflow-x: auto; }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 760px;
+      min-width: 500px;
     }
 
     th, td {
       border: 1px solid var(--border);
-      padding: 10px;
+      padding: 9px 10px;
       text-align: left;
       vertical-align: top;
+      font-size: 13px;
     }
 
     th {
       background: #182234;
       color: #cbd5e1;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
     }
 
-    td {
-      background: #101827;
-    }
+    td { background: #101827; }
 
+    tr.clickable-row { cursor: pointer; }
+    tr.clickable-row:hover td { background: #132033; }
+
+    /* ── Pills ── */
     .pill {
       display: inline-block;
-      padding: 4px 8px;
+      padding: 3px 8px;
       border-radius: 999px;
       font-size: 11px;
       font-weight: bold;
       border: 1px solid transparent;
     }
 
-    .pill-red {
-      background: rgba(239, 68, 68, 0.12);
-      color: #fca5a5;
-      border-color: rgba(239, 68, 68, 0.25);
-    }
+    .pill-red    { background: rgba(239,68,68,0.12); color:#fca5a5; border-color:rgba(239,68,68,0.25); }
+    .pill-yellow { background: rgba(245,158,11,0.12); color:#fcd34d; border-color:rgba(245,158,11,0.25); }
+    .pill-green  { background: rgba(34,197,94,0.12); color:#86efac; border-color:rgba(34,197,94,0.25); }
+    .pill-blue   { background: rgba(56,189,248,0.12); color:#7dd3fc; border-color:rgba(56,189,248,0.25); }
+    .pill-purple { background: rgba(167,139,250,0.12); color:#c4b5fd; border-color:rgba(167,139,250,0.25); }
 
-    .pill-yellow {
-      background: rgba(245, 158, 11, 0.12);
-      color: #fcd34d;
-      border-color: rgba(245, 158, 11, 0.25);
-    }
-
-    .pill-green {
-      background: rgba(34, 197, 94, 0.12);
-      color: #86efac;
-      border-color: rgba(34, 197, 94, 0.25);
-    }
-
-    .pill-blue {
-      background: rgba(56, 189, 248, 0.12);
-      color: #7dd3fc;
-      border-color: rgba(56, 189, 248, 0.25);
-    }
-
+    /* ── Two-col layout ── */
     .two-col {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -283,33 +360,70 @@
     }
 
     @media (max-width: 1000px) {
-      .two-col {
-        grid-template-columns: 1fr;
-      }
+      .two-col { grid-template-columns: 1fr; }
+    }
+
+    /* ── Empty state ── */
+    .empty-row td {
+      text-align: center;
+      color: var(--muted);
+      padding: 24px;
+      font-style: italic;
+    }
+
+    /* ── Open link in table ── */
+    .table-open-btn {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 7px;
+      background: rgba(56,189,248,0.1);
+      border: 1px solid rgba(56,189,248,0.25);
+      color: var(--blue);
+      font-size: 11px;
+      font-weight: bold;
+      white-space: nowrap;
+    }
+
+    .table-open-btn:hover {
+      background: rgba(56,189,248,0.18);
+      text-decoration: none;
     }
   </style>
 </head>
 <body>
+
+  <!-- Top Nav -->
   <div class="top-nav">
-    <p><a href="./ap-review.html">← Back to AP Review</a></p>
-    <div class="top-row">
-      <div>
-        <h1>AP Admin Dashboard</h1>
-        <div class="muted">Operations, exception monitoring, and financial visibility for invoice processing.</div>
-      </div>
-      <div class="actions">
-        <button id="refreshButton" type="button">Refresh Dashboard</button>
-      </div>
+    <div class="top-nav-left">
+      <h1>AP Admin Dashboard</h1>
+      <div class="subtitle">Operations, exception monitoring, and financial visibility for invoice processing.</div>
+    </div>
+    <div class="nav-links">
+      <a class="nav-link nav-link-upload" href="https://approcessor.netlify.app/" target="_blank" rel="noopener noreferrer">⬆ Upload Invoice</a>
+      <a class="nav-link" href="./ap-review.html">← AP Review Queue</a>
+      <button id="refreshButton" type="button">Refresh Dashboard</button>
     </div>
   </div>
 
-  <div id="statusMessage" class="status">Loading dashboard...</div>
+  <!-- Status bar -->
+  <div class="status-bar">
+    <div id="statusMessage" class="status-message">Loading dashboard…</div>
+    <div class="refresh-info">
+      <div class="refresh-dot" id="refreshDot"></div>
+      <span id="refreshLabel">—</span>
+    </div>
+  </div>
 
+  <!-- Filters -->
   <section class="filter-panel">
-    <div class="panel-header">
+    <div class="filter-panel-header">
       <div>
         <h2>Dashboard Filters</h2>
-        <div class="muted">Use filters to narrow the dashboard snapshot and drill into AP Review.</div>
+        <div class="muted">Narrow the snapshot and drill through to the AP Review queue.</div>
+      </div>
+      <div class="filter-actions">
+        <button id="applyFiltersButton" type="button">Apply Filters</button>
+        <button id="clearFiltersButton" type="button">Clear</button>
       </div>
     </div>
 
@@ -338,13 +452,13 @@
       <div class="field-group">
         <label for="statusFilter">Invoice Status</label>
         <select id="statusFilter">
-          <option value="">All</option>
-          <option value="needs_review">needs_review</option>
-          <option value="approved">approved</option>
-          <option value="duplicate">duplicate</option>
-          <option value="failed">failed</option>
-          <option value="queued">queued</option>
-          <option value="extracting">extracting</option>
+          <option value="">All Statuses</option>
+          <option value="needs_review">Needs Review</option>
+          <option value="approved">Approved</option>
+          <option value="duplicate">Duplicate</option>
+          <option value="failed">Failed</option>
+          <option value="queued">Queued</option>
+          <option value="extracting">Extracting</option>
         </select>
       </div>
 
@@ -354,63 +468,37 @@
           <option value="">All Vendors</option>
         </select>
       </div>
-
-      <div class="field-group">
-        <label for="locationFilter">Location</label>
-        <select id="locationFilter" disabled>
-          <option value="">Location filter coming later</option>
-        </select>
-      </div>
-
-      <div class="field-group">
-        <button id="applyFiltersButton" type="button">Apply Filters</button>
-      </div>
-
-      <div class="field-group">
-        <button id="clearFiltersButton" type="button">Clear Filters</button>
-      </div>
     </div>
   </section>
 
+  <!-- Headline metric cards -->
   <div class="card-grid">
     <div id="cardNeedsReview" class="card card-yellow clickable">
-      <div class="card-title">Invoices Needing Review</div>
+      <div class="card-title">Needs Review</div>
       <div id="needsReviewInvoices" class="card-value">0</div>
       <div class="card-sub">Current workload queue</div>
-      <div class="trend-row">
-        <span>vs prior period:</span>
-        <span id="needsReviewTrend" class="trend-flat">0%</span>
-      </div>
+      <div class="trend-row">vs prior: <span id="needsReviewTrend" class="trend-flat">—</span></div>
     </div>
 
     <div id="cardCritical" class="card card-red clickable">
-      <div class="card-title">Critical Priority Invoices</div>
+      <div class="card-title">Critical Priority</div>
       <div id="criticalInvoices" class="card-value">0</div>
       <div class="card-sub">Priority score 80+</div>
-      <div class="trend-row">
-        <span>vs prior period:</span>
-        <span id="criticalTrend" class="trend-flat">0%</span>
-      </div>
+      <div class="trend-row">vs prior: <span id="criticalTrend" class="trend-flat">—</span></div>
     </div>
 
     <div id="cardApprovedToday" class="card card-green clickable">
-      <div class="card-title">Approved In Range</div>
+      <div class="card-title">Approved in Range</div>
       <div id="approvedToday" class="card-value">0</div>
-      <div class="card-sub">Invoices approved in selected date range</div>
-      <div class="trend-row">
-        <span>vs prior period:</span>
-        <span id="approvedTrend" class="trend-flat">0%</span>
-      </div>
+      <div class="card-sub">Invoices approved in date window</div>
+      <div class="trend-row">vs prior: <span id="approvedTrend" class="trend-flat">—</span></div>
     </div>
 
     <div id="cardDuplicate" class="card card-purple clickable">
-      <div class="card-title">Duplicate Invoices</div>
+      <div class="card-title">Duplicates</div>
       <div id="duplicateInvoices" class="card-value">0</div>
-      <div class="card-sub">Current duplicate status</div>
-      <div class="trend-row">
-        <span>vs prior period:</span>
-        <span id="duplicateTrend" class="trend-flat">0%</span>
-      </div>
+      <div class="card-sub">Confirmed duplicate invoices</div>
+      <div class="trend-row">vs prior: <span id="duplicateTrend" class="trend-flat">—</span></div>
     </div>
 
     <div class="card card-blue">
@@ -422,7 +510,7 @@
     <div class="card card-yellow">
       <div class="card-title">Retry Jobs</div>
       <div id="retryJobs" class="card-value">0</div>
-      <div class="card-sub">Jobs scheduled to retry</div>
+      <div class="card-sub">Scheduled to retry</div>
     </div>
 
     <div class="card card-red">
@@ -438,40 +526,35 @@
     </div>
   </div>
 
+  <!-- Financial snapshot -->
   <div class="panel">
     <div class="panel-header">
       <div>
         <h2>Financial Snapshot</h2>
-        <div class="muted">Current invoice-dollar exposure and throughput snapshot for the selected filters.</div>
+        <div class="muted">Invoice-dollar exposure for the selected date window and filters. Click a card to drill into the queue.</div>
       </div>
     </div>
-
     <div class="card-grid">
       <div id="cardReviewDollars" class="card card-yellow clickable">
         <div class="card-title">Dollars Needing Review</div>
         <div id="reviewDollars" class="card-value">$0</div>
       </div>
-
       <div id="cardApprovedDollars" class="card card-green clickable">
         <div class="card-title">Approved Dollars</div>
         <div id="approvedDollars" class="card-value">$0</div>
       </div>
-
       <div id="cardDuplicateDollars" class="card card-purple clickable">
         <div class="card-title">Duplicate Dollars</div>
         <div id="duplicateDollars" class="card-value">$0</div>
       </div>
-
       <div id="cardFailedDollars" class="card card-red clickable">
         <div class="card-title">Failed Dollars</div>
         <div id="failedDollars" class="card-value">$0</div>
       </div>
-
       <div class="card card-blue">
-        <div class="card-title">Average Invoice Amount</div>
+        <div class="card-title">Avg Invoice Amount</div>
         <div id="avgInvoiceAmount" class="card-value">$0</div>
       </div>
-
       <div id="cardHighRiskDollars" class="card card-red clickable">
         <div class="card-title">High-Risk Dollars</div>
         <div id="highRiskDollars" class="card-value">$0</div>
@@ -479,23 +562,24 @@
     </div>
   </div>
 
+  <!-- Queue issues + Exception flags -->
   <div class="two-col">
     <section class="panel">
       <div class="panel-header">
         <div>
           <h2>Recent Queue Issues</h2>
-          <div class="muted">Most recent retry/failed jobs requiring support attention.</div>
+          <div class="muted">Retry/failed jobs needing attention. Click a row to open the invoice.</div>
         </div>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Job ID</th>
               <th>Status</th>
               <th>Attempts</th>
               <th>Last Error</th>
               <th>Updated</th>
+              <th>Invoice</th>
             </tr>
           </thead>
           <tbody id="jobIssuesTableBody"></tbody>
@@ -507,15 +591,16 @@
       <div class="panel-header">
         <div>
           <h2>Top Exception Flags</h2>
-          <div class="muted">Most common exception conditions across invoices.</div>
+          <div class="muted">Most common exception conditions. Click a row to filter the queue.</div>
         </div>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Flag Code</th>
+              <th>Flag</th>
               <th>Count</th>
+              <th>Drill In</th>
             </tr>
           </thead>
           <tbody id="topFlagsTableBody"></tbody>
@@ -524,12 +609,13 @@
     </section>
   </div>
 
+  <!-- Top vendors + High priority invoices -->
   <div class="two-col">
     <section class="panel">
       <div class="panel-header">
         <div>
           <h2>Top Vendors by Invoice Dollars</h2>
-          <div class="muted">Largest invoice-dollar concentration by vendor.</div>
+          <div class="muted">Largest dollar concentration by vendor. Click a row to view in queue.</div>
         </div>
       </div>
       <div class="table-wrap">
@@ -537,8 +623,9 @@
           <thead>
             <tr>
               <th>Vendor</th>
-              <th>Invoice Count</th>
-              <th>Total Dollars</th>
+              <th>Count</th>
+              <th>Total $</th>
+              <th>Queue</th>
             </tr>
           </thead>
           <tbody id="topVendorsTableBody"></tbody>
@@ -549,8 +636,8 @@
     <section class="panel">
       <div class="panel-header">
         <div>
-          <h2>Recent High-Priority Invoices</h2>
-          <div class="muted">Newest high-priority invoices for immediate review focus.</div>
+          <h2>High-Priority Invoices</h2>
+          <div class="muted">Priority 50+ in current window. Click a row to open the invoice.</div>
         </div>
       </div>
       <div class="table-wrap">
