@@ -799,6 +799,44 @@
       <button id="duplicateButton" type="button">Mark Duplicate</button>
       <button id="rerunParserButton" type="button">Re-Run Parser</button>
       <button id="reloadPdfButton" type="button">Reload PDF</button>
+      <button id="sendVarianceEmailButton" type="button" style="border-color: rgba(245,158,11,0.4); color: #fcd34d; background: rgba(245,158,11,0.08);">📧 Send Variance Email</button>
+    </div>
+
+    <!-- Variance Email Modal -->
+    <div id="varianceEmailModal" style="display:none; position:fixed; inset:0; z-index:200; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px); overflow-y:auto; padding:20px;">
+      <div style="max-width:780px; margin:40px auto; background:var(--panel); border:1px solid var(--border); border-radius:18px; box-shadow:var(--shadow); padding:28px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+          <h2 style="margin:0; color:var(--text);">📧 Send Pricing Variance Notice</h2>
+          <button id="closeVarianceEmailModal" type="button" style="background:transparent; border:none; color:var(--muted); font-size:22px; cursor:pointer; padding:4px 8px;">✕</button>
+        </div>
+
+        <div style="display:grid; gap:14px;">
+          <div style="display:grid; grid-template-columns:80px 1fr; align-items:center; gap:10px;">
+            <label style="color:var(--muted); font-size:13px; font-weight:bold;">To</label>
+            <input id="emailTo" type="email" placeholder="parts@yourcompany.com" style="background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:9px 12px; color:var(--text); font-size:14px; width:100%;" />
+          </div>
+          <div style="display:grid; grid-template-columns:80px 1fr; align-items:center; gap:10px;">
+            <label style="color:var(--muted); font-size:13px; font-weight:bold;">CC</label>
+            <input id="emailCc" type="email" placeholder="manager@yourcompany.com (optional)" style="background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:9px 12px; color:var(--text); font-size:14px; width:100%;" />
+          </div>
+          <div style="display:grid; grid-template-columns:80px 1fr; align-items:center; gap:10px;">
+            <label style="color:var(--muted); font-size:13px; font-weight:bold;">Subject</label>
+            <input id="emailSubject" type="text" style="background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:9px 12px; color:var(--text); font-size:14px; width:100%;" />
+          </div>
+          <div>
+            <label style="color:var(--muted); font-size:13px; font-weight:bold; display:block; margin-bottom:6px;">Message Body</label>
+            <textarea id="emailBody" rows="20" style="background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:12px; color:var(--text); font-size:13px; width:100%; font-family:monospace; line-height:1.6; resize:vertical;"></textarea>
+          </div>
+          <div id="emailPdfNote" style="font-size:12px; color:var(--muted); background:rgba(56,189,248,0.07); border:1px solid rgba(56,189,248,0.18); border-radius:8px; padding:10px 14px;"></div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:20px; flex-wrap:wrap;">
+          <button id="openInMailButton" type="button" style="background:rgba(56,189,248,0.1); border-color:rgba(56,189,248,0.3); color:#7dd3fc;">Open in Mail Client</button>
+          <button id="copyEmailButton" type="button" style="background:rgba(34,197,94,0.1); border-color:rgba(34,197,94,0.3); color:#86efac;">Copy to Clipboard</button>
+          <button id="closeVarianceEmailModal2" type="button" style="margin-left:auto;">Cancel</button>
+        </div>
+        <div id="emailModalStatus" style="margin-top:10px; font-size:13px; color:var(--muted); min-height:18px;"></div>
+      </div>
     </div>
 
     <div class="page-layout">

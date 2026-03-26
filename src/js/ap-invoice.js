@@ -17,6 +17,20 @@ const prevInvoiceButton = document.getElementById("prevInvoiceButton");
 const nextInvoiceButton = document.getElementById("nextInvoiceButton");
 const reloadPdfButton = document.getElementById("reloadPdfButton");
 const reloadDebugButton = document.getElementById("reloadDebugButton");
+const sendVarianceEmailButton = document.getElementById("sendVarianceEmailButton");
+
+// Email modal elements
+const varianceEmailModal = document.getElementById("varianceEmailModal");
+const emailTo = document.getElementById("emailTo");
+const emailCc = document.getElementById("emailCc");
+const emailSubject = document.getElementById("emailSubject");
+const emailBody = document.getElementById("emailBody");
+const emailPdfNote = document.getElementById("emailPdfNote");
+const emailModalStatus = document.getElementById("emailModalStatus");
+const openInMailButton = document.getElementById("openInMailButton");
+const copyEmailButton = document.getElementById("copyEmailButton");
+const closeVarianceEmailModal = document.getElementById("closeVarianceEmailModal");
+const closeVarianceEmailModal2 = document.getElementById("closeVarianceEmailModal2");
 const pdfFrame = document.getElementById("pdfFrame");
 const pdfFallback = document.getElementById("pdfFallback");
 const openPdfLink = document.getElementById("openPdfLink");
@@ -67,6 +81,12 @@ async function initPage() {
     nextInvoiceButton.addEventListener("click", goToNextInvoice);
     reloadPdfButton.addEventListener("click", reloadPdf);
     reloadDebugButton.addEventListener("click", reloadDebugPanel);
+    sendVarianceEmailButton.addEventListener("click", openVarianceEmailModal);
+    closeVarianceEmailModal.addEventListener("click", closeEmailModal);
+    closeVarianceEmailModal2.addEventListener("click", closeEmailModal);
+    openInMailButton.addEventListener("click", openEmailInMailClient);
+    copyEmailButton.addEventListener("click", copyEmailToClipboard);
+    varianceEmailModal.addEventListener("click", (e) => { if (e.target === varianceEmailModal) closeEmailModal(); });
     invoiceHeaderForm.addEventListener("input", renderFinancialChecks);
     lineTableBody.addEventListener("input", renderFinancialChecks);
 
@@ -1305,6 +1325,7 @@ function setBusyState(isBusy, message) {
   nextInvoiceButton.disabled = isBusy || nextInvoiceButton.disabled;
   reloadPdfButton.disabled = isBusy;
   reloadDebugButton.disabled = isBusy;
+  sendVarianceEmailButton.disabled = isBusy;
   statusMessage.textContent = message;
 }
 
@@ -1342,5 +1363,215 @@ function escapeHtml(value) {
 function escapeAttribute(value) {
   return escapeHtml(value);
 }
+
+// ─── Variance Email Modal ────────────────────────────────────────────────────
+
+function buildVarianceEmailBody(invoice, lines, poMatches, pdfUrl) {
+  const vendor = invoice?.vendor || "Unknown Vendor";
+  const invoiceNumber = invoice?.invoice_number || "N/A";
+  const invoiceDate = invoice?.invoice_date || "N/A";
+  const poNumber = invoice?.po_number || "N/A";
+  const totalInvoice = formatCurrency(invoice?.total_invoice || 0);
+  const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+  // Collect only mismatched / missing PART lines
+  const mismatchedLines = lines
+    .map((line, i) => ({ line, match: poMatches[i] || null }))
+    .filter(({ line, match }) => {
+      const type = String(line.line_type || "PART").toUpperCase();
+      if (type !== "PART") return false;
+      if (!match) return false;
+      return match.status === "mismatch" || match.status === "missing";
+    });
+
+  if (mismatchedLines.length === 0) {
+    // Shouldn't happen if button is used correctly, but handle gracefully
+    return buildNoVarianceBody(vendor, invoiceNumber, poNumber, today);
+  }
+
+  const lineRows = mismatchedLines.map(({ line, match }) => {
+    const partNum = line.part_number || "—";
+    const desc = line.description || "—";
+    const qty = line.quantity ?? 0;
+    const invUnit = formatCurrency(line.unit_price || line.net_unit_price || 0);
+    const rimssUnit = match?.poLine ? formatCurrency(Number(match.poLine.UnitCost || 0)) : "No PO Match";
+    const unitVar = match?.unitVariance != null ? formatCurrency(match.unitVariance) : "—";
+    const invTotal = formatCurrency(line.line_total || 0);
+    const rimssTotal = match?.poLine ? formatCurrency(Number(match.poLine.DetailTotal || 0)) : "No PO Match";
+    const totalVar = match?.totalVariance != null ? formatCurrency(match.totalVariance) : "—";
+
+    const issues = [];
+    if (match.status === "missing") {
+      issues.push("Part not found on PO");
+    } else {
+      if (!match.qtyMatch) issues.push(`Qty mismatch (inv: ${qty})`);
+      if (!match.priceMatch) issues.push(`Unit price mismatch`);
+      if (!match.totalMatch) issues.push(`Line total mismatch`);
+    }
+
+    return [
+      `  Part #:        ${partNum}`,
+      `  Description:   ${desc}`,
+      `  Qty:           ${qty}`,
+      `  Invoice Price: ${invUnit}  |  RIMSS/PO Price: ${rimssUnit}  |  Unit Variance: ${unitVar}`,
+      `  Invoice Total: ${invTotal}  |  RIMSS/PO Total: ${rimssTotal}  |  Total Variance: ${totalVar}`,
+      `  Issue(s):      ${issues.join("; ")}`,
+    ].join("\n");
+  });
+
+  const pdfSection = pdfUrl
+    ? `Invoice PDF:    ${pdfUrl}\n\n`
+    : `Invoice PDF:    (See attached invoice PDF)\n\n`;
+
+  return `Parts Department,
+
+AP is processing invoice ${invoiceNumber} from ${vendor} dated ${invoiceDate} against PO ${poNumber} (Invoice Total: ${totalInvoice}) and has identified pricing discrepancies that require your attention.
+
+These variances indicate the vendor may be billing us at prices that differ from what was agreed on the PO, and/or that the pricing in RIMSS may need to be updated to ensure customers are being charged correctly.
+
+─────────────────────────────────────────────
+PRICING VARIANCES FOUND (${mismatchedLines.length} line${mismatchedLines.length !== 1 ? "s" : ""})
+─────────────────────────────────────────────
+
+${lineRows.join("\n\n")}
+
+─────────────────────────────────────────────
+REQUESTED ACTIONS
+─────────────────────────────────────────────
+
+1. Review each part listed above and confirm what the correct agreed-upon price should be.
+2. If the vendor is billing incorrectly, please contact ${vendor} to obtain a corrected invoice or credit memo.
+3. If RIMSS pricing is out of date, please update the cost and selling price in RIMSS for each affected part to ensure customers are charged correctly going forward.
+4. Reply to this email with your findings so AP can resolve the invoice.
+
+${pdfSection}Please respond at your earliest convenience so we can process this invoice without delay.
+
+Thank you,
+Accounts Payable
+(Sent: ${today})`;
+}
+
+function buildNoVarianceBody(vendor, invoiceNumber, poNumber, today) {
+  return `Parts Department,
+
+AP has reviewed invoice ${invoiceNumber} from ${vendor} against PO ${poNumber}. No pricing variances were detected at this time — all part lines matched the PO.
+
+This message was generated but does not require action.
+
+Accounts Payable
+(Sent: ${today})`;
+}
+
+function countVarianceLines(lines, poMatches) {
+  return lines.filter((line, i) => {
+    const type = String(line.line_type || "PART").toUpperCase();
+    if (type !== "PART") return false;
+    const match = poMatches[i];
+    return match && (match.status === "mismatch" || match.status === "missing");
+  }).length;
+}
+
+async function openVarianceEmailModal() {
+  if (!currentInvoice) return;
+
+  const vendor = currentInvoice.vendor || "Unknown Vendor";
+  const invoiceNumber = currentInvoice.invoice_number || "N/A";
+  const poNumber = currentInvoice.po_number || "N/A";
+  const varianceCount = countVarianceLines(currentLines, currentPOMatches);
+
+  // Pre-fill subject
+  emailSubject.value = `ACTION REQUIRED: Pricing Variance on Invoice ${invoiceNumber} — ${vendor} (PO ${poNumber})`;
+
+  // Get PDF signed URL if available
+  let pdfUrl = "";
+  if (currentInvoice.storage_path) {
+    try {
+      const { data } = await supabase.storage
+        .from("ap-invoices")
+        .createSignedUrl(currentInvoice.storage_path, 86400); // 24hr link
+      pdfUrl = data?.signedUrl || "";
+    } catch (_e) {
+      pdfUrl = "";
+    }
+  }
+
+  // Build email body
+  emailBody.value = buildVarianceEmailBody(currentInvoice, currentLines, currentPOMatches, pdfUrl);
+
+  // PDF note
+  if (pdfUrl) {
+    emailPdfNote.innerHTML = `✅ <strong>PDF link included</strong> — a 24-hour signed link to the invoice PDF has been embedded in the email body. If sending via your mail client, you may also wish to attach the PDF directly.`;
+  } else {
+    emailPdfNote.innerHTML = `⚠️ <strong>No PDF link available</strong> — no signed URL could be generated. Please attach the invoice PDF manually before sending.`;
+  }
+
+  // Variance count notice
+  emailModalStatus.textContent = varianceCount > 0
+    ? `${varianceCount} pricing variance line${varianceCount !== 1 ? "s" : ""} detected and included in this email.`
+    : "No variance lines detected — email body reflects a no-issue result.";
+
+  // Clear To/CC for user to fill
+  emailTo.value = "";
+  emailCc.value = "";
+
+  varianceEmailModal.style.display = "block";
+  document.body.style.overflow = "hidden";
+  emailTo.focus();
+}
+
+function closeEmailModal() {
+  varianceEmailModal.style.display = "none";
+  document.body.style.overflow = "";
+  emailModalStatus.textContent = "";
+}
+
+function openEmailInMailClient() {
+  const to = emailTo.value.trim();
+  const cc = emailCc.value.trim();
+  const subject = emailSubject.value.trim();
+  const body = emailBody.value.trim();
+
+  if (!to) {
+    emailModalStatus.textContent = "Please enter a recipient email address.";
+    emailTo.focus();
+    return;
+  }
+
+  const params = new URLSearchParams();
+  if (cc) params.set("cc", cc);
+  params.set("subject", subject);
+  params.set("body", body);
+
+  const mailto = `mailto:${encodeURIComponent(to)}?${params.toString()}`;
+  window.location.href = mailto;
+  emailModalStatus.textContent = "Opening mail client...";
+}
+
+async function copyEmailToClipboard() {
+  const subject = emailSubject.value.trim();
+  const body = emailBody.value.trim();
+  const to = emailTo.value.trim();
+  const cc = emailCc.value.trim();
+
+  const full = [
+    to ? `To: ${to}` : "",
+    cc ? `CC: ${cc}` : "",
+    `Subject: ${subject}`,
+    "",
+    body,
+  ].filter(Boolean).join("\n");
+
+  try {
+    await navigator.clipboard.writeText(full);
+    emailModalStatus.textContent = "✅ Email copied to clipboard.";
+  } catch (_e) {
+    // Fallback: select textarea
+    emailBody.select();
+    document.execCommand("copy");
+    emailModalStatus.textContent = "✅ Email body copied (clipboard API unavailable — used fallback).";
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 initPage();
