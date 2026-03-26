@@ -768,6 +768,59 @@
         inset: 8px;
       }
     }
+    /* ── Audit Trail ── */
+    .audit-event {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 8px 14px;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(51,65,85,0.5);
+      font-size: 13px;
+    }
+    .audit-event:last-child { border-bottom: none; }
+    .audit-time { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .audit-detail strong { color: var(--text); }
+    .audit-field { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .audit-old { color: #ef4444; }
+    .audit-new { color: #22c55e; }
+
+    /* ── Inline confirm state on buttons ── */
+    button.confirming {
+      background: rgba(239,68,68,0.15) !important;
+      border-color: rgba(239,68,68,0.5) !important;
+      color: #fca5a5 !important;
+      animation: pulse-confirm 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse-confirm {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.3); }
+      50% { box-shadow: 0 0 0 4px rgba(239,68,68,0.12); }
+    }
+
+    /* ── Keyboard shortcut hint ── */
+    .kbd-hint {
+      position: fixed;
+      bottom: 18px;
+      right: 18px;
+      background: rgba(17,24,39,0.92);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--muted);
+      z-index: 50;
+      display: none;
+      line-height: 1.8;
+    }
+    .kbd-hint kbd {
+      display: inline-block;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 11px;
+      color: var(--text);
+      font-family: monospace;
+    }
   </style>
 </head>
 <body>
@@ -911,7 +964,8 @@
                 Full-screen reconciliation view with invoice pricing, RIMSS pricing, variance columns, and clearer match color coding.
               </p>
             </div>
-            <div class="lines-toolbar-right">
+            <div class="lines-toolbar-right" style="display:flex;gap:8px;align-items:center;">
+              <button id="jumpMismatchesButton" type="button" style="display:none; background:rgba(245,158,11,0.1); border-color:rgba(245,158,11,0.35); color:#fcd34d; font-size:12px; padding:7px 11px;">⚠ Show Mismatches Only</button>
               <button id="toggleLinesFullscreenButton" type="button" class="fullscreen-button">
                 Enter Full Screen
               </button>
@@ -1021,8 +1075,31 @@
             </div>
           </div>
         </section>
+
+        <section class="accordion-section" id="auditTrailAccordion">
+          <button type="button" class="accordion-toggle" data-accordion-target="auditTrailContent">
+            <span>
+              Audit Trail
+              <span class="accordion-meta">Review history, status changes, and field edits</span>
+            </span>
+            <span class="accordion-icon">▾</span>
+          </button>
+          <div class="accordion-content" id="auditTrailContent">
+            <div id="auditTrailTimeline" style="padding:4px 0;">
+              <p style="color:var(--muted);">Loading audit trail...</p>
+            </div>
+          </div>
+        </section>
       </section>
     </div>
+  </div>
+
+  <!-- Keyboard shortcut hint (shown on ? key) -->
+  <div class="kbd-hint" id="kbdHint">
+    <strong style="color:var(--text);display:block;margin-bottom:6px;">Keyboard Shortcuts</strong>
+    <kbd>A</kbd> Approve &nbsp; <kbd>H</kbd> Hold &nbsp; <kbd>R</kbd> Reject<br>
+    <kbd>N</kbd> Next invoice &nbsp; <kbd>P</kbd> Previous<br>
+    <kbd>Esc</kbd> Cancel confirm / close modal
   </div>
 
   <script type="module" src="../js/ap-invoice.js"></script>

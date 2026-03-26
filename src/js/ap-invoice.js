@@ -36,6 +36,9 @@ const holdReason = document.getElementById("holdReason");
 const rejectionReason = document.getElementById("rejectionReason");
 const toggleLinesFullscreenButton = document.getElementById("toggleLinesFullscreenButton");
 const invoiceLinesCard = document.getElementById("invoiceLinesCard");
+const jumpMismatchesButton = document.getElementById("jumpMismatchesButton");
+const auditTrailTimeline = document.getElementById("auditTrailTimeline");
+const kbdHint = document.getElementById("kbdHint");
 
 const debugExtractionId = document.getElementById("debugExtractionId");
 const debugParserVersion = document.getElementById("debugParserVersion");
@@ -59,6 +62,8 @@ let currentPOLines = [];
 let currentPOMatches = [];
 let poReconError = "";
 let isLinesFullscreen = false;
+let isLinesFilteredToMismatches = false;
+let pendingConfirm = null; // { action: fn, buttonEl: el, originalText: str, timer: id }
 
 async function initPage() {
   try {
@@ -83,9 +88,11 @@ async function initPage() {
     closeVarianceEmailModal2.addEventListener("click", closeEmailModal);
     copyEmailButton.addEventListener("click", copyEmailToClipboard);
     varianceEmailModal.addEventListener("click", (e) => { if (e.target === varianceEmailModal) closeEmailModal(); });
+    jumpMismatchesButton.addEventListener("click", toggleMismatchFilter);
     invoiceHeaderForm.addEventListener("input", renderFinancialChecks);
     lineTableBody.addEventListener("input", renderFinancialChecks);
 
+    initKeyboardShortcuts();
     initAccordionBehavior();
     initFullscreenBehavior();
 
@@ -245,6 +252,8 @@ async function loadInvoiceDetail() {
   renderInvoiceSummaryBar();
   renderFinancialChecks();
   updateNavigationButtons();
+  updateVarianceEmailButton();
+  loadAuditTrail(invoiceId);
 
   statusMessage.textContent = "Invoice loaded.";
 }
@@ -502,9 +511,29 @@ function renderLines(lines) {
     return;
   }
 
+  // Apply mismatch filter if active
+  const displayLines = isLinesFilteredToMismatches
+    ? lines.filter((line, i) => {
+        const type = String(line.line_type || "PART").toUpperCase();
+        if (type !== "PART") return false;
+        const match = currentPOMatches[i];
+        return match && (match.status === "mismatch" || match.status === "missing");
+      })
+    : lines;
+
+  if (isLinesFilteredToMismatches && displayLines.length === 0) {
+    lineTableBody.innerHTML = `
+      <tr>
+        <td colspan="15" style="color:var(--muted); text-align:center; padding:20px;">No mismatched lines found.</td>
+      </tr>
+    `;
+    return;
+  }
+
   const duplicateParts = getDuplicatePartNumbers(lines);
 
-  lineTableBody.innerHTML = lines.map((line, index) => {
+  lineTableBody.innerHTML = displayLines.map((line) => {
+    const index = lines.indexOf(line); // preserve original index for PO match lookup
     const duplicateKey = String(line.part_number || "").trim().toUpperCase();
     const duplicateClass = duplicateParts.has(duplicateKey) ? "line-duplicate" : "";
     const poMatch = currentPOMatches[index] || null;
@@ -653,6 +682,13 @@ function renderInvoiceSummaryBar() {
   const priority = Number(currentInvoice?.review_priority || 0);
   const vendorMatchMethod = currentInvoice?.vendor_match_method || "n/a";
   const total = Number(currentInvoice?.total_invoice || 0);
+  const varianceCount = countVarianceLines(currentLines, currentPOMatches);
+
+  const variancePill = varianceCount > 0
+    ? `<span class="summary-pill" style="background:rgba(245,158,11,0.15);color:#fcd34d;border-color:rgba(245,158,11,0.35);">⚠ ${varianceCount} Variance${varianceCount !== 1 ? "s" : ""}</span>`
+    : currentPOMatches.length > 0
+      ? `<span class="summary-pill" style="background:rgba(34,197,94,0.12);color:#86efac;border-color:rgba(34,197,94,0.28);">✓ PO Matched</span>`
+      : "";
 
   invoiceSummaryBar.innerHTML = `
     <span class="summary-pill">Vendor: ${escapeHtml(vendor)}</span>
@@ -660,6 +696,7 @@ function renderInvoiceSummaryBar() {
     <span class="summary-pill">Priority: ${priority}</span>
     <span class="summary-pill">Vendor Match: ${escapeHtml(vendorMatchMethod)}</span>
     <span class="summary-pill">Total: ${escapeHtml(formatCurrency(total))}</span>
+    ${variancePill}
   `;
 }
 
@@ -995,7 +1032,11 @@ async function saveChanges() {
 
 async function approveInvoice() {
   if (!currentInvoice) return;
+  if (!confirmAction(approveButton, "Confirm Approve ✓", executeApprove)) return;
+}
 
+async function executeApprove() {
+  if (!currentInvoice) return;
   try {
     setBusyState(true, "Approving invoice...");
 
@@ -1072,7 +1113,11 @@ async function putInvoiceOnHold() {
 
 async function rejectInvoice() {
   if (!currentInvoice) return;
+  if (!confirmAction(rejectButton, "Confirm Reject ✗", executeReject)) return;
+}
 
+async function executeReject() {
+  if (!currentInvoice) return;
   try {
     setBusyState(true, "Rejecting invoice...");
 
@@ -1110,7 +1155,11 @@ async function rejectInvoice() {
 
 async function markDuplicate() {
   if (!currentInvoice) return;
+  if (!confirmAction(duplicateButton, "Confirm Duplicate ✗", executeMarkDuplicate)) return;
+}
 
+async function executeMarkDuplicate() {
+  if (!currentInvoice) return;
   try {
     setBusyState(true, "Marking invoice as duplicate...");
 
@@ -1325,6 +1374,187 @@ function setBusyState(isBusy, message) {
   statusMessage.textContent = message;
 }
 
+// ─── Inline Confirmation ─────────────────────────────────────────────────────
+
+function confirmAction(buttonEl, confirmLabel, action) {
+  // If this button is already in confirm state, execute the action
+  if (pendingConfirm?.buttonEl === buttonEl) {
+    clearTimeout(pendingConfirm.timer);
+    cancelConfirm();
+    action();
+    return false; // we've handled it
+  }
+
+  // Cancel any other pending confirm first
+  cancelConfirm();
+
+  const originalText = buttonEl.textContent;
+  buttonEl.textContent = confirmLabel;
+  buttonEl.classList.add("confirming");
+
+  const timer = setTimeout(() => {
+    cancelConfirm();
+    statusMessage.textContent = "Action cancelled — confirmation timed out.";
+  }, 4000);
+
+  pendingConfirm = { action, buttonEl, originalText, timer };
+  statusMessage.textContent = "Click again to confirm, or press Esc to cancel.";
+  return false; // don't proceed yet
+}
+
+function cancelConfirm() {
+  if (!pendingConfirm) return;
+  clearTimeout(pendingConfirm.timer);
+  pendingConfirm.buttonEl.textContent = pendingConfirm.originalText;
+  pendingConfirm.buttonEl.classList.remove("confirming");
+  pendingConfirm = null;
+}
+
+// ─── Keyboard Shortcuts ──────────────────────────────────────────────────────
+
+function initKeyboardShortcuts() {
+  let kbdHintTimer = null;
+
+  document.addEventListener("keydown", (e) => {
+    // Don't fire shortcuts when typing in inputs/textareas
+    const tag = document.activeElement?.tagName?.toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    // Don't fire when modal is open
+    if (varianceEmailModal.style.display !== "none") return;
+
+    switch (e.key) {
+      case "a":
+      case "A":
+        e.preventDefault();
+        approveInvoice();
+        break;
+      case "h":
+      case "H":
+        e.preventDefault();
+        putInvoiceOnHold();
+        break;
+      case "r":
+      case "R":
+        e.preventDefault();
+        rejectInvoice();
+        break;
+      case "n":
+      case "N":
+        e.preventDefault();
+        if (!nextInvoiceButton.disabled) goToNextInvoice();
+        break;
+      case "p":
+      case "P":
+        e.preventDefault();
+        if (!prevInvoiceButton.disabled) goToPreviousInvoice();
+        break;
+      case "Escape":
+        if (pendingConfirm) {
+          cancelConfirm();
+          statusMessage.textContent = "Action cancelled.";
+        }
+        break;
+      case "?":
+        kbdHint.style.display = "block";
+        clearTimeout(kbdHintTimer);
+        kbdHintTimer = setTimeout(() => { kbdHint.style.display = "none"; }, 4000);
+        break;
+    }
+  });
+}
+
+// ─── Jump to Mismatches ──────────────────────────────────────────────────────
+
+function toggleMismatchFilter() {
+  isLinesFilteredToMismatches = !isLinesFilteredToMismatches;
+  jumpMismatchesButton.textContent = isLinesFilteredToMismatches
+    ? "⊘ Show All Lines"
+    : "⚠ Show Mismatches Only";
+  jumpMismatchesButton.style.background = isLinesFilteredToMismatches
+    ? "rgba(56,189,248,0.1)"
+    : "rgba(245,158,11,0.1)";
+  jumpMismatchesButton.style.borderColor = isLinesFilteredToMismatches
+    ? "rgba(56,189,248,0.35)"
+    : "rgba(245,158,11,0.35)";
+  jumpMismatchesButton.style.color = isLinesFilteredToMismatches ? "#7dd3fc" : "#fcd34d";
+  renderLines(currentLines);
+}
+
+function updateVarianceEmailButton() {
+  const count = countVarianceLines(currentLines, currentPOMatches);
+  if (count > 0) {
+    sendVarianceEmailButton.textContent = `📧 Send Variance Email (${count})`;
+    sendVarianceEmailButton.style.borderColor = "rgba(245,158,11,0.55)";
+    sendVarianceEmailButton.style.color = "#fcd34d";
+    sendVarianceEmailButton.style.background = "rgba(245,158,11,0.14)";
+    sendVarianceEmailButton.style.boxShadow = "0 0 8px rgba(245,158,11,0.18)";
+
+    // Show jump-to-mismatches button
+    jumpMismatchesButton.style.display = "inline-block";
+  } else {
+    sendVarianceEmailButton.textContent = "📧 Send Variance Email";
+    sendVarianceEmailButton.style.borderColor = "rgba(245,158,11,0.2)";
+    sendVarianceEmailButton.style.color = "#94a3b8";
+    sendVarianceEmailButton.style.background = "transparent";
+    sendVarianceEmailButton.style.boxShadow = "none";
+
+    jumpMismatchesButton.style.display = "none";
+    isLinesFilteredToMismatches = false;
+  }
+}
+
+// ─── Audit Trail ─────────────────────────────────────────────────────────────
+
+async function loadAuditTrail(invoiceId) {
+  if (!auditTrailTimeline) return;
+  auditTrailTimeline.innerHTML = `<p style="color:var(--muted); font-size:13px;">Loading audit trail...</p>`;
+
+  const { data, error } = await supabase
+    .from("ap_invoice_review_events")
+    .select("*")
+    .eq("invoice_id", invoiceId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    auditTrailTimeline.innerHTML = `<p style="color:#ef4444; font-size:13px;">Failed to load audit trail: ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    auditTrailTimeline.innerHTML = `<p style="color:var(--muted); font-size:13px;">No audit events recorded yet.</p>`;
+    return;
+  }
+
+  auditTrailTimeline.innerHTML = data.map((event) => {
+    const fieldLabel = String(event.field_name || "")
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+
+    const oldVal = event.old_value != null ? escapeHtml(String(event.old_value)) : "—";
+    const newVal = event.new_value != null ? escapeHtml(String(event.new_value)) : "—";
+    const reason = event.change_reason ? `<span style="color:var(--muted); font-size:12px;"> — ${escapeHtml(event.change_reason)}</span>` : "";
+    const changedBy = event.changed_by ? `<span style="color:var(--muted); font-size:11px;">by ${escapeHtml(String(event.changed_by))}</span>` : "";
+
+    return `
+      <div class="audit-event">
+        <div class="audit-time">
+          ${formatDateTime(event.created_at)}<br>
+          ${changedBy}
+        </div>
+        <div class="audit-detail">
+          <strong>${escapeHtml(fieldLabel)}</strong>${reason}
+          <div class="audit-field">
+            <span class="audit-old">${oldVal}</span>
+            <span style="color:var(--muted);margin:0 6px;">→</span>
+            <span class="audit-new">${newVal}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
 function formatCurrency(value) {
   const number = Number(value || 0);
   return number.toLocaleString("en-US", {
@@ -1362,7 +1592,9 @@ function escapeAttribute(value) {
 
 // ─── Variance Email Modal ────────────────────────────────────────────────────
 
-function buildVarianceEmailBody(invoice, lines, poMatches, pdfUrl) {
+let currentEmailPdfUrl = ""; // stored separately so copy can use it as a hyperlink
+
+function buildVarianceEmailBody(invoice, lines, poMatches) {
   const vendor = invoice?.vendor || "Unknown Vendor";
   const invoiceNumber = invoice?.invoice_number || "N/A";
   const invoiceDate = invoice?.invoice_date || "N/A";
@@ -1370,7 +1602,6 @@ function buildVarianceEmailBody(invoice, lines, poMatches, pdfUrl) {
   const totalInvoice = formatCurrency(invoice?.total_invoice || 0);
   const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 
-  // Collect only mismatched / missing PART lines
   const mismatchedLines = lines
     .map((line, i) => ({ line, match: poMatches[i] || null }))
     .filter(({ line, match }) => {
@@ -1414,11 +1645,12 @@ function buildVarianceEmailBody(invoice, lines, poMatches, pdfUrl) {
     ].join("\n");
   });
 
-  const pdfLine = pdfUrl
-    ? `Invoice PDF:    ${pdfUrl}\n                (Link valid for 7 days)`
+  // Plain-text PDF line shown in textarea — hyperlink handled separately on copy
+  const pdfLine = currentEmailPdfUrl
+    ? `Invoice PDF:    AP Invoice (link attached)`
     : invoice?.storage_path
-      ? `Invoice PDF:    (Signed link unavailable — please attach the PDF manually)`
-      : `Invoice PDF:    (No PDF on file — please attach manually if available)`;
+      ? `Invoice PDF:    Retrieve from AP system — Invoice ID: ${invoice.id}`
+      : `Invoice PDF:    (Please attach the invoice PDF manually)`;
 
   return `Parts Department,
 
@@ -1480,26 +1712,24 @@ async function openVarianceEmailModal() {
 
   emailSubject.value = `ACTION REQUIRED: Pricing Variance on Invoice ${invoiceNumber} — ${vendor} (PO ${poNumber})`;
 
-  // Generate a 7-day signed PDF URL (604800 = max Supabase allows)
-  let pdfUrl = "";
+  // Attempt a signed URL; store it for use in the HTML clipboard copy
+  currentEmailPdfUrl = "";
   if (currentInvoice.storage_path) {
     try {
       const { data } = await supabase.storage
         .from("ap-invoices")
         .createSignedUrl(currentInvoice.storage_path, 604800);
-      pdfUrl = data?.signedUrl || "";
+      currentEmailPdfUrl = data?.signedUrl || "";
     } catch (_e) {
-      pdfUrl = "";
+      currentEmailPdfUrl = "";
     }
   }
 
-  emailBody.value = buildVarianceEmailBody(currentInvoice, currentLines, currentPOMatches, pdfUrl);
+  emailBody.value = buildVarianceEmailBody(currentInvoice, currentLines, currentPOMatches);
 
-  if (pdfUrl) {
-    emailPdfNote.innerHTML = `✅ <strong>7-day PDF link included</strong> in the email body. The link expires in 7 days — if the email sits too long, regenerate it by reopening this dialog.`;
-  } else {
-    emailPdfNote.innerHTML = `⚠️ <strong>No PDF link available</strong> — no signed URL could be generated. Please attach the invoice PDF manually before sending.`;
-  }
+  emailPdfNote.innerHTML = currentEmailPdfUrl
+    ? `✅ <strong>PDF link ready.</strong> When you copy, the text "AP Invoice" in the email will become a clickable hyperlink to the PDF. Link expires in 7 days.`
+    : `⚠️ <strong>No PDF link available.</strong> Please attach the invoice PDF manually before sending.`;
 
   emailModalStatus.textContent = varianceCount > 0
     ? `${varianceCount} pricing variance line${varianceCount !== 1 ? "s" : ""} detected and included in this email.`
@@ -1518,16 +1748,35 @@ function closeEmailModal() {
 
 async function copyEmailToClipboard() {
   const subject = emailSubject.value.trim();
-  const body = emailBody.value.trim();
-  const full = `Subject: ${subject}\n\n${body}`;
+  let body = emailBody.value.trim();
+
+  // Replace the plain-text PDF placeholder with an HTML hyperlink when pasting
+  // into rich-text email clients. We copy both plain text and HTML to clipboard.
+  const plainFull = `Subject: ${subject}\n\n${body}`;
+
+  let htmlFull = null;
+  if (currentEmailPdfUrl) {
+    const htmlBody = body
+      .replace("AP Invoice (link attached)", `<a href="${currentEmailPdfUrl}">AP Invoice</a>`)
+      .replace(/\n/g, "<br>");
+    htmlFull = `<p><strong>Subject:</strong> ${subject}</p><br>${htmlBody}`;
+  }
 
   try {
-    await navigator.clipboard.writeText(full);
-    emailModalStatus.textContent = "✅ Email copied to clipboard.";
+    if (htmlFull && typeof ClipboardItem !== "undefined") {
+      const item = new ClipboardItem({
+        "text/plain": new Blob([plainFull], { type: "text/plain" }),
+        "text/html": new Blob([htmlFull], { type: "text/html" }),
+      });
+      await navigator.clipboard.write([item]);
+    } else {
+      await navigator.clipboard.writeText(plainFull);
+    }
+    emailModalStatus.textContent = "✅ Email copied to clipboard — paste into your email client.";
   } catch (_e) {
     emailBody.select();
     document.execCommand("copy");
-    emailModalStatus.textContent = "✅ Email body copied (clipboard API unavailable — used fallback).";
+    emailModalStatus.textContent = "✅ Email body copied (fallback mode).";
   }
 }
 
