@@ -21,13 +21,10 @@ const sendVarianceEmailButton = document.getElementById("sendVarianceEmailButton
 
 // Email modal elements
 const varianceEmailModal = document.getElementById("varianceEmailModal");
-const emailTo = document.getElementById("emailTo");
-const emailCc = document.getElementById("emailCc");
 const emailSubject = document.getElementById("emailSubject");
 const emailBody = document.getElementById("emailBody");
 const emailPdfNote = document.getElementById("emailPdfNote");
 const emailModalStatus = document.getElementById("emailModalStatus");
-const openInMailButton = document.getElementById("openInMailButton");
 const copyEmailButton = document.getElementById("copyEmailButton");
 const closeVarianceEmailModal = document.getElementById("closeVarianceEmailModal");
 const closeVarianceEmailModal2 = document.getElementById("closeVarianceEmailModal2");
@@ -84,7 +81,6 @@ async function initPage() {
     sendVarianceEmailButton.addEventListener("click", openVarianceEmailModal);
     closeVarianceEmailModal.addEventListener("click", closeEmailModal);
     closeVarianceEmailModal2.addEventListener("click", closeEmailModal);
-    openInMailButton.addEventListener("click", openEmailInMailClient);
     copyEmailButton.addEventListener("click", copyEmailToClipboard);
     varianceEmailModal.addEventListener("click", (e) => { if (e.target === varianceEmailModal) closeEmailModal(); });
     invoiceHeaderForm.addEventListener("input", renderFinancialChecks);
@@ -1385,7 +1381,6 @@ function buildVarianceEmailBody(invoice, lines, poMatches, pdfUrl) {
     });
 
   if (mismatchedLines.length === 0) {
-    // Shouldn't happen if button is used correctly, but handle gracefully
     return buildNoVarianceBody(vendor, invoiceNumber, poNumber, today);
   }
 
@@ -1419,9 +1414,11 @@ function buildVarianceEmailBody(invoice, lines, poMatches, pdfUrl) {
     ].join("\n");
   });
 
-  const pdfSection = pdfUrl
-    ? `Invoice PDF:    ${pdfUrl}\n\n`
-    : `Invoice PDF:    (See attached invoice PDF)\n\n`;
+  const pdfLine = pdfUrl
+    ? `Invoice PDF:    ${pdfUrl}\n                (Link valid for 7 days)`
+    : invoice?.storage_path
+      ? `Invoice PDF:    (Signed link unavailable — please attach the PDF manually)`
+      : `Invoice PDF:    (No PDF on file — please attach manually if available)`;
 
   return `Parts Department,
 
@@ -1444,7 +1441,9 @@ REQUESTED ACTIONS
 3. If RIMSS pricing is out of date, please update the cost and selling price in RIMSS for each affected part to ensure customers are charged correctly going forward.
 4. Reply to this email with your findings so AP can resolve the invoice.
 
-${pdfSection}Please respond at your earliest convenience so we can process this invoice without delay.
+${pdfLine}
+
+Please respond at your earliest convenience so we can process this invoice without delay.
 
 Thank you,
 Accounts Payable
@@ -1479,44 +1478,36 @@ async function openVarianceEmailModal() {
   const poNumber = currentInvoice.po_number || "N/A";
   const varianceCount = countVarianceLines(currentLines, currentPOMatches);
 
-  // Pre-fill subject
   emailSubject.value = `ACTION REQUIRED: Pricing Variance on Invoice ${invoiceNumber} — ${vendor} (PO ${poNumber})`;
 
-  // Get PDF signed URL if available
+  // Generate a 7-day signed PDF URL (604800 = max Supabase allows)
   let pdfUrl = "";
   if (currentInvoice.storage_path) {
     try {
       const { data } = await supabase.storage
         .from("ap-invoices")
-        .createSignedUrl(currentInvoice.storage_path, 86400); // 24hr link
+        .createSignedUrl(currentInvoice.storage_path, 604800);
       pdfUrl = data?.signedUrl || "";
     } catch (_e) {
       pdfUrl = "";
     }
   }
 
-  // Build email body
   emailBody.value = buildVarianceEmailBody(currentInvoice, currentLines, currentPOMatches, pdfUrl);
 
-  // PDF note
   if (pdfUrl) {
-    emailPdfNote.innerHTML = `✅ <strong>PDF link included</strong> — a 24-hour signed link to the invoice PDF has been embedded in the email body. If sending via your mail client, you may also wish to attach the PDF directly.`;
+    emailPdfNote.innerHTML = `✅ <strong>7-day PDF link included</strong> in the email body. The link expires in 7 days — if the email sits too long, regenerate it by reopening this dialog.`;
   } else {
     emailPdfNote.innerHTML = `⚠️ <strong>No PDF link available</strong> — no signed URL could be generated. Please attach the invoice PDF manually before sending.`;
   }
 
-  // Variance count notice
   emailModalStatus.textContent = varianceCount > 0
     ? `${varianceCount} pricing variance line${varianceCount !== 1 ? "s" : ""} detected and included in this email.`
     : "No variance lines detected — email body reflects a no-issue result.";
 
-  // Clear To/CC for user to fill
-  emailTo.value = "";
-  emailCc.value = "";
-
   varianceEmailModal.style.display = "block";
   document.body.style.overflow = "hidden";
-  emailTo.focus();
+  emailSubject.focus();
 }
 
 function closeEmailModal() {
@@ -1525,47 +1516,15 @@ function closeEmailModal() {
   emailModalStatus.textContent = "";
 }
 
-function openEmailInMailClient() {
-  const to = emailTo.value.trim();
-  const cc = emailCc.value.trim();
-  const subject = emailSubject.value.trim();
-  const body = emailBody.value.trim();
-
-  if (!to) {
-    emailModalStatus.textContent = "Please enter a recipient email address.";
-    emailTo.focus();
-    return;
-  }
-
-  const params = new URLSearchParams();
-  if (cc) params.set("cc", cc);
-  params.set("subject", subject);
-  params.set("body", body);
-
-  const mailto = `mailto:${encodeURIComponent(to)}?${params.toString()}`;
-  window.location.href = mailto;
-  emailModalStatus.textContent = "Opening mail client...";
-}
-
 async function copyEmailToClipboard() {
   const subject = emailSubject.value.trim();
   const body = emailBody.value.trim();
-  const to = emailTo.value.trim();
-  const cc = emailCc.value.trim();
-
-  const full = [
-    to ? `To: ${to}` : "",
-    cc ? `CC: ${cc}` : "",
-    `Subject: ${subject}`,
-    "",
-    body,
-  ].filter(Boolean).join("\n");
+  const full = `Subject: ${subject}\n\n${body}`;
 
   try {
     await navigator.clipboard.writeText(full);
     emailModalStatus.textContent = "✅ Email copied to clipboard.";
   } catch (_e) {
-    // Fallback: select textarea
     emailBody.select();
     document.execCommand("copy");
     emailModalStatus.textContent = "✅ Email body copied (clipboard API unavailable — used fallback).";

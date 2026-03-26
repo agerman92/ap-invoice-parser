@@ -812,14 +812,6 @@
 
         <div style="display:grid; gap:14px;">
           <div style="display:grid; grid-template-columns:80px 1fr; align-items:center; gap:10px;">
-            <label style="color:var(--muted); font-size:13px; font-weight:bold;">To</label>
-            <input id="emailTo" type="email" placeholder="parts@yourcompany.com" style="background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:9px 12px; color:var(--text); font-size:14px; width:100%;" />
-          </div>
-          <div style="display:grid; grid-template-columns:80px 1fr; align-items:center; gap:10px;">
-            <label style="color:var(--muted); font-size:13px; font-weight:bold;">CC</label>
-            <input id="emailCc" type="email" placeholder="manager@yourcompany.com (optional)" style="background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:9px 12px; color:var(--text); font-size:14px; width:100%;" />
-          </div>
-          <div style="display:grid; grid-template-columns:80px 1fr; align-items:center; gap:10px;">
             <label style="color:var(--muted); font-size:13px; font-weight:bold;">Subject</label>
             <input id="emailSubject" type="text" style="background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:9px 12px; color:var(--text); font-size:14px; width:100%;" />
           </div>
@@ -831,9 +823,8 @@
         </div>
 
         <div style="display:flex; gap:10px; margin-top:20px; flex-wrap:wrap;">
-          <button id="openInMailButton" type="button" style="background:rgba(56,189,248,0.1); border-color:rgba(56,189,248,0.3); color:#7dd3fc;">Open in Mail Client</button>
           <button id="copyEmailButton" type="button" style="background:rgba(34,197,94,0.1); border-color:rgba(34,197,94,0.3); color:#86efac;">Copy to Clipboard</button>
-          <button id="closeVarianceEmailModal2" type="button" style="margin-left:auto;">Cancel</button>
+          <button id="closeVarianceEmailModal2" type="button" style="margin-left:auto;">Close</button>
         </div>
         <div id="emailModalStatus" style="margin-top:10px; font-size:13px; color:var(--muted); min-height:18px;"></div>
       </div>
