@@ -23,6 +23,8 @@ const openPdfLink = document.getElementById("openPdfLink");
 const apNotes = document.getElementById("apNotes");
 const holdReason = document.getElementById("holdReason");
 const rejectionReason = document.getElementById("rejectionReason");
+const toggleLinesFullscreenButton = document.getElementById("toggleLinesFullscreenButton");
+const invoiceLinesCard = document.getElementById("invoiceLinesCard");
 
 const debugExtractionId = document.getElementById("debugExtractionId");
 const debugParserVersion = document.getElementById("debugParserVersion");
@@ -45,6 +47,7 @@ let invoiceNavigationList = [];
 let currentPOLines = [];
 let currentPOMatches = [];
 let poReconError = "";
+let isLinesFullscreen = false;
 
 async function initPage() {
   try {
@@ -67,12 +70,55 @@ async function initPage() {
     invoiceHeaderForm.addEventListener("input", renderFinancialChecks);
     lineTableBody.addEventListener("input", renderFinancialChecks);
 
+    initAccordionBehavior();
+    initFullscreenBehavior();
+
     await loadInvoiceNavigation();
     await loadInvoiceDetail();
   } catch (error) {
     console.error(error);
     statusMessage.textContent = `Error initializing page: ${error.message}`;
   }
+}
+
+function initAccordionBehavior() {
+  const accordionButtons = document.querySelectorAll(".accordion-toggle");
+
+  accordionButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const section = button.closest(".accordion-section");
+      if (!section) return;
+      section.classList.toggle("is-collapsed");
+    });
+  });
+
+  const invoiceHeaderAccordion = document.getElementById("invoiceHeaderAccordion");
+  const reviewWorkflowAccordion = document.getElementById("reviewWorkflowAccordion");
+  const parserDebugAccordion = document.getElementById("parserDebugAccordion");
+
+  invoiceHeaderAccordion?.classList.remove("is-collapsed");
+  reviewWorkflowAccordion?.classList.add("is-collapsed");
+  parserDebugAccordion?.classList.add("is-collapsed");
+}
+
+function initFullscreenBehavior() {
+  if (!toggleLinesFullscreenButton || !invoiceLinesCard) return;
+
+  toggleLinesFullscreenButton.addEventListener("click", () => {
+    isLinesFullscreen = !isLinesFullscreen;
+    invoiceLinesCard.classList.toggle("is-fullscreen", isLinesFullscreen);
+    document.body.classList.toggle("lines-fullscreen-active", isLinesFullscreen);
+    toggleLinesFullscreenButton.textContent = isLinesFullscreen ? "Exit Full Screen" : "Enter Full Screen";
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && isLinesFullscreen) {
+      isLinesFullscreen = false;
+      invoiceLinesCard.classList.remove("is-fullscreen");
+      document.body.classList.remove("lines-fullscreen-active");
+      toggleLinesFullscreenButton.textContent = "Enter Full Screen";
+    }
+  });
 }
 
 async function loadInvoiceNavigation() {
@@ -372,6 +418,44 @@ function getDuplicatePartNumbers(lines) {
   return duplicates;
 }
 
+function getReconValueClass(value, tolerance, mode = "variance") {
+  if (value == null || !Number.isFinite(Number(value))) {
+    return "rimss-na";
+  }
+
+  const numericValue = Math.abs(Number(value));
+
+  if (mode === "variance") {
+    if (numericValue <= tolerance) return "rimss-match";
+    if (numericValue <= tolerance * 5) return "rimss-close";
+    return "rimss-mismatch";
+  }
+
+  return "rimss-na";
+}
+
+function getReconStatusClass(match) {
+  if (!match) return "recon-status-na";
+  if (match.status === "match") return "recon-status-match";
+  if (match.status === "mismatch") return "recon-status-mismatch";
+  if (match.status === "missing") return "recon-status-missing";
+  return "recon-status-na";
+}
+
+function getReconStatusText(match) {
+  if (!match) return "NOT RUN";
+  if (match.status === "not_applicable") return "N/A";
+  if (match.status === "match") return "MATCH";
+  if (match.status === "missing") return "NO PO MATCH";
+
+  const issues = [];
+  if (!match.qtyMatch) issues.push("qty");
+  if (!match.priceMatch) issues.push("price");
+  if (!match.totalMatch) issues.push("total");
+
+  return `MISMATCH (${issues.join(", ")})`;
+}
+
 function formatReconCurrency(value) {
   if (value == null || !Number.isFinite(Number(value))) return "—";
   return formatCurrency(Number(value));
@@ -379,15 +463,14 @@ function formatReconCurrency(value) {
 
 function formatVarianceCell(value, tolerance) {
   if (value == null || !Number.isFinite(Number(value))) {
-    return `<div class="line-readonly">—</div>`;
+    return `<div class="line-readonly rimss-na">—</div>`;
   }
 
   const numericValue = Number(value);
-  const isWithinTolerance = Math.abs(numericValue) <= tolerance;
-  const className = isWithinTolerance ? "financial-ok" : "financial-warn";
+  const className = getReconValueClass(numericValue, tolerance, "variance");
 
   return `
-    <div class="line-readonly ${className}" style="font-weight:700;">
+    <div class="line-readonly ${className}">
       ${formatCurrency(numericValue)}
     </div>
   `;
@@ -397,7 +480,7 @@ function renderLines(lines) {
   if (!lines.length) {
     lineTableBody.innerHTML = `
       <tr>
-        <td colspan="14">No lines found.</td>
+        <td colspan="15">No lines found.</td>
       </tr>
     `;
     return;
@@ -410,6 +493,9 @@ function renderLines(lines) {
     const duplicateClass = duplicateParts.has(duplicateKey) ? "line-duplicate" : "";
     const poMatch = currentPOMatches[index] || null;
     const reconBadge = getReconBadge(poMatch);
+    const unitValueClass = getReconValueClass(poMatch?.unitVariance, 0.02, "variance");
+    const totalValueClass = getReconValueClass(poMatch?.totalVariance, 0.05, "variance");
+    const reconStatusClass = getReconStatusClass(poMatch);
 
     return `
       <tr data-line-index="${index}" class="${duplicateClass}">
@@ -430,13 +516,14 @@ function renderLines(lines) {
         <td><input class="line-input ${lineConfidenceClass(line.line_number, "origin")}" data-field="origin" type="text" value="${escapeAttribute(line.origin || "")}" /></td>
         <td><input class="line-input ${lineConfidenceClass(line.line_number, "quantity")}" data-field="quantity" type="number" step="0.01" value="${line.quantity ?? 0}" /></td>
         <td><input class="line-input ${lineConfidenceClass(line.line_number, "unit_price")}" data-field="unit_price" type="number" step="0.01" value="${line.unit_price ?? 0}" /></td>
-        <td><div class="line-readonly">${formatReconCurrency(poMatch?.poUnitCost)}</div></td>
+        <td><div class="line-readonly ${poMatch?.poUnitCost == null ? "rimss-na" : unitValueClass}">${formatReconCurrency(poMatch?.poUnitCost)}</div></td>
         <td>${formatVarianceCell(poMatch?.unitVariance, 0.02)}</td>
         <td><input class="line-input ${lineConfidenceClass(line.line_number, "discount_percent")}" data-field="discount_percent" type="number" step="0.01" value="${line.discount_percent ?? 0}" /></td>
         <td><input class="line-input ${lineConfidenceClass(line.line_number, "net_unit_price")}" data-field="net_unit_price" type="number" step="0.01" value="${line.net_unit_price ?? 0}" /></td>
         <td><input class="line-input ${lineConfidenceClass(line.line_number, "line_total")}" data-field="line_total" type="number" step="0.01" value="${line.line_total ?? 0}" /></td>
-        <td><div class="line-readonly">${formatReconCurrency(poMatch?.poLineTotal)}</div></td>
+        <td><div class="line-readonly ${poMatch?.poLineTotal == null ? "rimss-na" : totalValueClass}">${formatReconCurrency(poMatch?.poLineTotal)}</div></td>
         <td>${formatVarianceCell(poMatch?.totalVariance, 0.05)}</td>
+        <td><div class="line-readonly recon-status-cell ${reconStatusClass}">${escapeHtml(getReconStatusText(poMatch))}</div></td>
       </tr>
     `;
   }).join("");

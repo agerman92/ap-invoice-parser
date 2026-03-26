@@ -15,8 +15,11 @@
       --muted: #94a3b8;
       --blue: #38bdf8;
       --green: #22c55e;
+      --green-soft: rgba(34, 197, 94, 0.14);
       --yellow: #f59e0b;
+      --yellow-soft: rgba(245, 158, 11, 0.14);
       --red: #ef4444;
+      --red-soft: rgba(239, 68, 68, 0.14);
       --pink: #f472b6;
       --shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
     }
@@ -124,7 +127,7 @@
       top: 0;
       background: rgba(15, 23, 42, 0.95);
       backdrop-filter: blur(6px);
-      z-index: 20;
+      z-index: 30;
       padding: 12px 0 14px 0;
       border-bottom: 1px solid var(--border);
     }
@@ -145,7 +148,7 @@
 
     .page-layout {
       display: grid;
-      grid-template-columns: minmax(740px, 48vw) minmax(980px, 1fr);
+      grid-template-columns: minmax(720px, 45vw) minmax(1120px, 1fr);
       gap: 16px;
       align-items: start;
       min-height: calc(100vh - 120px);
@@ -221,7 +224,7 @@
       display: grid;
       grid-template-columns: repeat(3, minmax(180px, 1fr));
       gap: 14px 16px;
-      margin-bottom: 20px;
+      margin-bottom: 6px;
     }
 
     .field-group {
@@ -325,20 +328,154 @@
       font-size: 13px;
     }
 
-    .lines-section {
-      overflow: auto;
+    .accordion-section {
       border: 1px solid var(--border);
       border-radius: 16px;
+      margin-bottom: 18px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.02);
+    }
+
+    .accordion-toggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 16px;
+      border: 0;
+      border-bottom: 1px solid transparent;
+      background: #182234;
+      color: var(--text);
+      text-align: left;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 0;
+    }
+
+    .accordion-toggle:hover {
+      background: #22304a;
+    }
+
+    .accordion-toggle .accordion-meta {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: normal;
+    }
+
+    .accordion-toggle .accordion-icon {
+      font-size: 18px;
+      line-height: 1;
+      transition: transform 0.2s ease;
+    }
+
+    .accordion-section.is-collapsed .accordion-toggle {
+      border-bottom-color: transparent;
+    }
+
+    .accordion-section:not(.is-collapsed) .accordion-toggle {
+      border-bottom-color: var(--border);
+    }
+
+    .accordion-section.is-collapsed .accordion-toggle .accordion-icon {
+      transform: rotate(-90deg);
+    }
+
+    .accordion-content {
+      padding: 16px;
+    }
+
+    .accordion-section.is-collapsed .accordion-content {
+      display: none;
+    }
+
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(220px, 1fr));
+      gap: 12px;
+    }
+
+    textarea.workflow-input {
+      width: 100%;
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    .lines-card {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(23, 32, 51, 0.92) 0%, rgba(17, 24, 39, 0.96) 100%);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .lines-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      background: #182234;
+      flex-wrap: wrap;
+    }
+
+    .lines-toolbar-left h2 {
+      margin: 0 0 4px 0;
+      font-size: 22px;
+    }
+
+    .lines-toolbar-left p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .lines-toolbar-right {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .fullscreen-button {
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      color: #7dd3fc;
+    }
+
+    .lines-section {
+      overflow: auto;
+      border-top: 0;
       background: rgba(255,255,255,0.02);
       padding: 8px;
       max-width: 100%;
+      max-height: 900px;
+    }
+
+    .lines-card.is-fullscreen {
+      position: fixed;
+      inset: 12px;
+      z-index: 1000;
+      margin: 0;
+      width: auto;
+      height: auto;
+      border-radius: 18px;
+    }
+
+    .lines-card.is-fullscreen .lines-section {
+      max-height: calc(100vh - 110px);
+    }
+
+    body.lines-fullscreen-active {
+      overflow: hidden;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 0;
-      min-width: 1750px;
+      min-width: 1900px;
     }
 
     th,
@@ -356,6 +493,9 @@
       text-transform: uppercase;
       letter-spacing: 0.04em;
       white-space: nowrap;
+      position: sticky;
+      top: 0;
+      z-index: 5;
     }
 
     td {
@@ -377,6 +517,7 @@
     .line-readonly {
       display: flex;
       align-items: center;
+      justify-content: flex-start;
       min-height: 40px;
       padding: 8px;
       border-radius: 10px;
@@ -391,8 +532,55 @@
       background: rgba(245, 158, 11, 0.12);
     }
 
+    .rimss-match {
+      background: var(--green-soft);
+      border-color: rgba(34, 197, 94, 0.35);
+      color: #bbf7d0;
+      font-weight: bold;
+    }
+
+    .rimss-close {
+      background: var(--yellow-soft);
+      border-color: rgba(245, 158, 11, 0.35);
+      color: #fde68a;
+      font-weight: bold;
+    }
+
+    .rimss-mismatch {
+      background: var(--red-soft);
+      border-color: rgba(239, 68, 68, 0.35);
+      color: #fecaca;
+      font-weight: bold;
+    }
+
+    .rimss-na {
+      background: rgba(148, 163, 184, 0.08);
+      border-color: rgba(148, 163, 184, 0.18);
+      color: var(--muted);
+    }
+
+    .recon-status-cell {
+      font-weight: bold;
+      white-space: nowrap;
+    }
+
+    .recon-status-match {
+      color: #86efac;
+    }
+
+    .recon-status-mismatch {
+      color: #fde68a;
+    }
+
+    .recon-status-missing {
+      color: #fca5a5;
+    }
+
+    .recon-status-na {
+      color: var(--muted);
+    }
+
     .debug-panel {
-      margin-top: 22px;
       overflow: hidden;
     }
 
@@ -528,23 +716,13 @@
       background: rgba(120, 53, 15, 0.16) !important;
     }
 
-    .workflow-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(220px, 1fr));
-      gap: 12px;
-    }
-
-    textarea.workflow-input {
-      width: 100%;
-      min-height: 100px;
-      resize: vertical;
+    @media (max-width: 1800px) {
+      .page-layout {
+        grid-template-columns: minmax(620px, 42vw) minmax(900px, 1fr);
+      }
     }
 
     @media (max-width: 1680px) {
-      .page-layout {
-        grid-template-columns: minmax(620px, 44vw) minmax(840px, 1fr);
-      }
-
       .header-grid {
         grid-template-columns: repeat(2, minmax(180px, 1fr));
       }
@@ -584,6 +762,10 @@
       .header-grid,
       .financial-grid {
         grid-template-columns: 1fr;
+      }
+
+      .lines-card.is-fullscreen {
+        inset: 8px;
       }
     }
   </style>
@@ -642,134 +824,171 @@
       </section>
 
       <section class="form-panel">
-        <div class="section-header">
-          <h2>Invoice Header</h2>
-          <p>Editable AP review fields with parser confidence cues and workflow controls.</p>
+        <div class="accordion-section" id="invoiceHeaderAccordion">
+          <button type="button" class="accordion-toggle" data-accordion-target="invoiceHeaderContent">
+            <span>
+              Invoice Header
+              <span class="accordion-meta">Editable AP fields and parser confidence indicators</span>
+            </span>
+            <span class="accordion-icon">▾</span>
+          </button>
+          <div class="accordion-content" id="invoiceHeaderContent">
+            <div id="invoiceHeaderForm" class="header-grid"></div>
+
+            <h2>Exceptions</h2>
+            <div id="invoiceExceptions" class="exception-box"></div>
+
+            <h2>Warnings</h2>
+            <div id="invoiceWarnings" class="warnings"></div>
+
+            <h2>Financial Checks</h2>
+            <div id="financialChecks" class="financial-box"></div>
+          </div>
         </div>
 
-        <div id="invoiceHeaderForm" class="header-grid"></div>
-
-        <h2>Exceptions</h2>
-        <div id="invoiceExceptions" class="exception-box"></div>
-
-        <h2>Warnings</h2>
-        <div id="invoiceWarnings" class="warnings"></div>
-
-        <h2>Financial Checks</h2>
-        <div id="financialChecks" class="financial-box"></div>
-
-        <h2>Review Workflow</h2>
-        <div class="workflow-box">
-          <div class="workflow-grid">
-            <div class="field-group">
-              <label for="apNotes">AP Notes</label>
-              <textarea id="apNotes" class="workflow-input" placeholder="Add AP notes..."></textarea>
-            </div>
-            <div class="field-group">
-              <label for="holdReason">Hold Reason</label>
-              <textarea id="holdReason" class="workflow-input" placeholder="Reason invoice is on hold..."></textarea>
-            </div>
-            <div class="field-group">
-              <label for="rejectionReason">Rejection Reason</label>
-              <textarea id="rejectionReason" class="workflow-input" placeholder="Reason invoice is rejected..."></textarea>
+        <div class="accordion-section" id="reviewWorkflowAccordion">
+          <button type="button" class="accordion-toggle" data-accordion-target="reviewWorkflowContent">
+            <span>
+              Review Workflow
+              <span class="accordion-meta">Notes, hold reasons, and rejection comments</span>
+            </span>
+            <span class="accordion-icon">▾</span>
+          </button>
+          <div class="accordion-content" id="reviewWorkflowContent">
+            <div class="workflow-box">
+              <div class="workflow-grid">
+                <div class="field-group">
+                  <label for="apNotes">AP Notes</label>
+                  <textarea id="apNotes" class="workflow-input" placeholder="Add AP notes..."></textarea>
+                </div>
+                <div class="field-group">
+                  <label for="holdReason">Hold Reason</label>
+                  <textarea id="holdReason" class="workflow-input" placeholder="Reason invoice is on hold..."></textarea>
+                </div>
+                <div class="field-group">
+                  <label for="rejectionReason">Rejection Reason</label>
+                  <textarea id="rejectionReason" class="workflow-input" placeholder="Reason invoice is rejected..."></textarea>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <h2>Invoice Lines</h2>
-        <p class="small-note">
-          This view is widened for full-screen AP review. It shows invoice pricing side-by-side with RIMSS pricing and total-line variances so reviewers can see exactly how far off each part line is.
-        </p>
-
-        <div class="lines-section">
-          <table>
-            <thead>
-              <tr>
-                <th>Line #</th>
-                <th>Type</th>
-                <th>Part Number</th>
-                <th>Description</th>
-                <th>Origin</th>
-                <th>Qty</th>
-                <th>Inv Unit</th>
-                <th>RIMSS Unit</th>
-                <th>Unit Var</th>
-                <th>Discount %</th>
-                <th>Net Unit</th>
-                <th>Inv Line Total</th>
-                <th>RIMSS Line Total</th>
-                <th>Total Var</th>
-              </tr>
-            </thead>
-            <tbody id="lineTableBody"></tbody>
-          </table>
-        </div>
-
-        <section class="debug-panel">
-          <div class="debug-header">
-            <h2>Parser Debug Panel</h2>
-            <button id="reloadDebugButton" type="button">Refresh Debug</button>
+        <section class="lines-card" id="invoiceLinesCard">
+          <div class="lines-toolbar">
+            <div class="lines-toolbar-left">
+              <h2>Invoice Lines</h2>
+              <p>
+                Full-screen reconciliation view with invoice pricing, RIMSS pricing, variance columns, and clearer match color coding.
+              </p>
+            </div>
+            <div class="lines-toolbar-right">
+              <button id="toggleLinesFullscreenButton" type="button" class="fullscreen-button">
+                Enter Full Screen
+              </button>
+            </div>
           </div>
 
-          <div class="debug-grid">
-            <div class="debug-card">
-              <div class="debug-label">Extraction ID</div>
-              <div id="debugExtractionId" class="debug-value"></div>
+          <div class="lines-section" id="linesSection">
+            <table>
+              <thead>
+                <tr>
+                  <th>Line #</th>
+                  <th>Type</th>
+                  <th>Part Number</th>
+                  <th>Description</th>
+                  <th>Origin</th>
+                  <th>Qty</th>
+                  <th>Inv Unit</th>
+                  <th>RIMSS Unit</th>
+                  <th>Unit Var</th>
+                  <th>Discount %</th>
+                  <th>Net Unit</th>
+                  <th>Inv Line Total</th>
+                  <th>RIMSS Line Total</th>
+                  <th>Total Var</th>
+                  <th>Recon Status</th>
+                </tr>
+              </thead>
+              <tbody id="lineTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="accordion-section debug-panel" id="parserDebugAccordion">
+          <button type="button" class="accordion-toggle" data-accordion-target="parserDebugContent">
+            <span>
+              Parser Debug Panel
+              <span class="accordion-meta">Extraction data, parser version, raw text, and structured JSON</span>
+            </span>
+            <span class="accordion-icon">▾</span>
+          </button>
+          <div class="accordion-content" id="parserDebugContent">
+            <div class="debug-header">
+              <h2 style="margin:0;">Parser Debug Panel</h2>
+              <button id="reloadDebugButton" type="button">Refresh Debug</button>
             </div>
 
-            <div class="debug-card">
-              <div class="debug-label">Parser Version</div>
-              <div id="debugParserVersion" class="debug-value"></div>
-            </div>
+            <div class="debug-grid">
+              <div class="debug-card">
+                <div class="debug-label">Extraction ID</div>
+                <div id="debugExtractionId" class="debug-value"></div>
+              </div>
 
-            <div class="debug-card">
-              <div class="debug-label">Extraction Status</div>
-              <div id="debugExtractionStatus" class="debug-value"></div>
-            </div>
+              <div class="debug-card">
+                <div class="debug-label">Parser Version</div>
+                <div id="debugParserVersion" class="debug-value"></div>
+              </div>
 
-            <div class="debug-card">
-              <div class="debug-label">Model</div>
-              <div id="debugModel" class="debug-value"></div>
-            </div>
+              <div class="debug-card">
+                <div class="debug-label">Extraction Status</div>
+                <div id="debugExtractionStatus" class="debug-value"></div>
+              </div>
 
-            <div class="debug-card">
-              <div class="debug-label">Started At</div>
-              <div id="debugStartedAt" class="debug-value"></div>
-            </div>
+              <div class="debug-card">
+                <div class="debug-label">Model</div>
+                <div id="debugModel" class="debug-value"></div>
+              </div>
 
-            <div class="debug-card">
-              <div class="debug-label">Completed At</div>
-              <div id="debugCompletedAt" class="debug-value"></div>
-            </div>
+              <div class="debug-card">
+                <div class="debug-label">Started At</div>
+                <div id="debugStartedAt" class="debug-value"></div>
+              </div>
 
-            <div class="debug-card">
-              <div class="debug-label">Processing Time</div>
-              <div id="debugProcessingTime" class="debug-value"></div>
-            </div>
+              <div class="debug-card">
+                <div class="debug-label">Completed At</div>
+                <div id="debugCompletedAt" class="debug-value"></div>
+              </div>
 
-            <div class="debug-card">
-              <div class="debug-label">Vendor Match Method</div>
-              <div id="debugVendorMatchMethod" class="debug-value"></div>
-            </div>
+              <div class="debug-card">
+                <div class="debug-label">Processing Time</div>
+                <div id="debugProcessingTime" class="debug-value"></div>
+              </div>
 
-            <div class="debug-card debug-full">
-              <div class="debug-label">Extraction Error</div>
-              <div id="debugErrorMessage" class="debug-value"></div>
-            </div>
+              <div class="debug-card">
+                <div class="debug-label">Vendor Match Method</div>
+                <div id="debugVendorMatchMethod" class="debug-value"></div>
+              </div>
 
-            <div class="debug-card debug-full">
-              <div class="debug-label">Stored Warnings</div>
-              <div id="debugWarnings"></div>
-            </div>
+              <div class="debug-card debug-full">
+                <div class="debug-label">Extraction Error</div>
+                <div id="debugErrorMessage" class="debug-value"></div>
+              </div>
 
-            <div class="debug-card debug-full">
-              <div class="debug-label">Structured JSON</div>
-              <pre id="debugStructuredJson" class="debug-pre"></pre>
-            </div>
+              <div class="debug-card debug-full">
+                <div class="debug-label">Stored Warnings</div>
+                <div id="debugWarnings"></div>
+              </div>
 
-            <div class="debug-card debug-full">
-              <div class="debug-label">Raw Text Preview</div>
-              <pre id="debugRawText" class="debug-text-preview"></pre>
+              <div class="debug-card debug-full">
+                <div class="debug-label">Structured JSON</div>
+                <pre id="debugStructuredJson" class="debug-pre"></pre>
+              </div>
+
+              <div class="debug-card debug-full">
+                <div class="debug-label">Raw Text Preview</div>
+                <pre id="debugRawText" class="debug-text-preview"></pre>
+              </div>
             </div>
           </div>
         </section>
