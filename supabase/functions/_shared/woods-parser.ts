@@ -70,7 +70,7 @@ function extractHeader(layout: PdfLayoutResult): Partial<InvoiceExtraction> {
 
   const invoiceNumber = firstMatch(text, /Invoice No:\s*([0-9]+)/i);
   const invoiceDate = firstMatch(text, /Billing Date:\s*([0-9/]+)/i);
-  const poNumber = firstMatch(text, /P\.O\.No:\s*([^\n]+)/i);
+  const poNumber = firstMatch(text, /P\.O\.No:\s*([A-Z0-9\-\/]+)/i);
   const packingListNo = firstMatch(text, /Packing List No:\s*([0-9]+)/i);
   const shipmentNumber = firstMatch(text, /Shipment Number:\s*([0-9]+)/i);
   const orderNumber = firstMatch(text, /Sales Order No:\s*([0-9]+)/i);
