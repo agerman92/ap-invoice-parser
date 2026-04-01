@@ -1,4 +1,4 @@
-import OpenAI from "npm:openai@4.86.1";
+import OpenAI from "npm:openai@4.104.0";
 import {
   invoiceJsonSchema,
   type InvoiceExtraction,
@@ -9,8 +9,7 @@ const openai = new OpenAI({
 });
 
 function buildPrompt(rawText: string): string {
-  return `
-You are extracting structured AP invoice data for financial review at an equipment dealership.
+  return `You are extracting structured AP invoice data for financial review at an equipment dealership.
 
 Rules:
 - Extract only what is present in the invoice text.
@@ -44,25 +43,28 @@ Line item rules:
 - "origin" is the country of origin or origin code if shown on the line, otherwise empty string.
 
 Invoice text:
-${rawText}
-  `.trim();
+${rawText}`.trim();
 }
 
 export async function extractStructuredInvoice(
   rawText: string,
 ): Promise<InvoiceExtraction> {
-  const response = await openai.responses.create({
-    model: "gpt-5",
-    input: buildPrompt(rawText),
-    text: {
-      format: {
-        type: "json_schema",
-        ...invoiceJsonSchema,
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "user", content: buildPrompt(rawText) },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: invoiceJsonSchema.name,
+        strict: invoiceJsonSchema.strict,
+        schema: invoiceJsonSchema.schema as Record<string, unknown>,
       },
     },
   });
 
-  const content = response.output_text?.trim();
+  const content = response.choices?.[0]?.message?.content?.trim();
   if (!content) {
     throw new Error("OpenAI returned empty structured output.");
   }

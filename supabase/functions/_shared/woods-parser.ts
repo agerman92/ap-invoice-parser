@@ -101,8 +101,10 @@ function isNoiseRow(text: string): boolean {
   return (
     !t ||
     t.includes("WOODS EQUIPMENT") ||
-    t.includes("INVOICE") ||
+    t === "INVOICE" ||
     t.includes("INVOICE DETAILS") ||
+    t.startsWith("INVOICE NO") ||
+    t.startsWith("INVOICE INFORMATION") ||
     t.includes("BILL-TO ADDRESS") ||
     t.includes("SHIP-TO ADDRESS") ||
     t.includes("REMIT-TO ADDRESS") ||
@@ -115,6 +117,8 @@ function isNoiseRow(text: string): boolean {
     t.includes("FORWARDING AGENT") ||
     t.includes("ITEM MATERIAL DESCRIPTION") ||
     t.includes("QUANTITY SHIPPED OPEN QUANTITY") ||
+    t.includes("LIST PRICE") ||
+    t.includes("NET PRICE") ||
     t.includes("WE WILL NEVER ASK YOU TO CHANGE REMITTANCE INFORMATION") ||
     t.includes("THIS INVOICE IS DUE WHEN SOLD") ||
     t.startsWith("TOTAL PRODUCT VALUE") ||
@@ -176,23 +180,41 @@ type PartialItemRow = {
 function parsePartialItemRow(text: string): PartialItemRow | null {
   const normalized = clean(text);
 
-  // Must have exactly 5 tokens: item# partno qtyEA openqty listprice
-  const match = normalized.match(
+  // Primary pattern: item# partno qtyEA openqty listprice (EA attached to qty)
+  const m1 = normalized.match(
     /^(\d+)\s+(\S+)\s+(\d+(?:\.\d+)?)EA\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.[0-9]{2})$/i,
   );
-  if (!match) return null;
+  if (m1) {
+    const partNumber = m1[2] || "";
+    const quantity   = num(m1[3]);
+    if (!partNumber || quantity <= 0) return null;
+    return { itemNo: num(m1[1]), partNumber, quantity, openQty: num(m1[4]), listPrice: num(m1[5]), pendingDesc: "" };
+  }
 
-  const partNumber = match[2] || "";
-  const quantity   = num(match[3]);
-  if (!partNumber || quantity <= 0) return null;
+  // Alternate: EA may be a separate token — "10 W37876 1 EA 0 123.87"
+  const m2 = normalized.match(
+    /^(\d+)\s+(\S+)\s+(\d+(?:\.\d+)?)\s+EA\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.[0-9]{2})$/i,
+  );
+  if (m2) {
+    const partNumber = m2[2] || "";
+    const quantity   = num(m2[3]);
+    if (!partNumber || quantity <= 0) return null;
+    return { itemNo: num(m2[1]), partNumber, quantity, openQty: num(m2[4]), listPrice: num(m2[5]), pendingDesc: "" };
+  }
 
-  return {
-    itemNo:    num(match[1]),
-    partNumber,
-    quantity,
-    openQty:   num(match[4]),
-    listPrice: num(match[5]),
-  };
+  // Fallback: item# partno qty openqty listprice (no EA unit at all)
+  const m3 = normalized.match(
+    /^(\d+)\s+(\S+)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.[0-9]{2})$/i,
+  );
+  if (m3) {
+    const partNumber = m3[2] || "";
+    const quantity   = num(m3[3]);
+    // Reject if part number looks like a price
+    if (!partNumber || quantity <= 0 || /^[0-9,]+\.[0-9]{2}$/.test(partNumber)) return null;
+    return { itemNo: num(m3[1]), partNumber, quantity, openQty: num(m3[4]), listPrice: num(m3[5]), pendingDesc: "" };
+  }
+
+  return null;
 }
 
 // ── Completion row: netPrice amount (the lower stacked price row) ─────────────
