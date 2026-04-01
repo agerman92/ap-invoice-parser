@@ -10,28 +10,38 @@ const openai = new OpenAI({
 
 function buildPrompt(rawText: string): string {
   return `
-You are extracting structured AP invoice data for financial review.
+You are extracting structured AP invoice data for financial review at an equipment dealership.
 
 Rules:
 - Extract only what is present in the invoice text.
 - Do not invent values.
 - If a field is missing, return an empty string for text or 0 for numbers.
 - Preserve line order.
-- Return PART lines for merchandise.
-- Return FREIGHT, DROP_SHIPMENT, or MISC for non-merchandise charges when applicable.
+- Return PART lines for merchandise/parts.
+- Return FREIGHT for shipping charges.
+- Return DROP_SHIPMENT for drop-ship fees.
+- Return MISC for other non-part charges.
 - If invoice spans multiple pages, include all lines.
 - Output must match the schema exactly.
 
-Special handling:
-- "invoice_number" should be the vendor invoice number, not PO number.
-- "invoice_date" should remain as found in the document.
-- "currency" should usually be USD unless another currency is explicitly shown.
-- For each line:
-  - quantity must be numeric
-  - unit_price must be the gross unit price if shown
-  - discount_percent should be 0 if absent
-  - net_unit_price should be the effective unit price after discount if shown, otherwise unit_price
-  - line_total should be the extended line amount
+Field rules:
+- "invoice_number" is the vendor's invoice number, NOT the PO number.
+- "invoice_date" should be the date as shown in the document (do not reformat).
+- "currency" is USD unless another currency is explicitly shown.
+- "subtotal" is the sum of part line totals before freight/charges.
+- "total_invoice" is the final amount due including all charges.
+
+Line item rules:
+- "quantity" must be the shipped/billed quantity as a number.
+- "unit_price" is the gross/list unit price before any discount.
+- "discount_percent" — some vendors show a dollar discount (e.g. "13.69-") rather than a
+  percentage. Convert any dollar discount to a percentage:
+  discount_percent = round((dollar_discount / unit_price) * 100, 2)
+  If no discount is present, use 0.
+- "net_unit_price" is the effective unit price after discount. If not shown, derive it:
+  net_unit_price = unit_price * (1 - discount_percent / 100)
+- "line_total" is the extended total for the line (net_unit_price * quantity).
+- "origin" is the country of origin or origin code if shown on the line, otherwise empty string.
 
 Invoice text:
 ${rawText}

@@ -13,9 +13,20 @@ function clean(text: string): string {
 
 function num(value: string): number {
   if (!value) return 0;
+  // Handle trailing minus (Kubota formats discounts as "13.69-")
   const normalized = value.replace(/,/g, "").replace(/\$/g, "").trim();
-  const n = Number(normalized);
-  return Number.isFinite(n) ? n : 0;
+  const trailingMinus = normalized.endsWith("-");
+  const cleaned = trailingMinus ? normalized.slice(0, -1) : normalized;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return 0;
+  return trailingMinus ? -n : n;
+}
+
+// Kubota's discount column is a DOLLAR amount, not a percentage.
+// Derive the equivalent percentage from gross and net prices for schema consistency.
+function deriveDiscountPercent(grossPrice: number, netPrice: number): number {
+  if (grossPrice <= 0 || netPrice >= grossPrice) return 0;
+  return Math.round((1 - netPrice / grossPrice) * 10000) / 100;
 }
 
 function firstMatch(text: string, regex: RegExp): string {
@@ -232,9 +243,66 @@ function parsePartRow(text: string, lineNumber: number): InvoiceLine | null {
     origin: "",
     quantity: shipQty,
     unit_price: dealerGross,
-    discount_percent: disc,
+    discount_percent: deriveDiscountPercent(dealerGross, dealerNet),
     net_unit_price: dealerNet,
     line_total: extNet,
+  };
+}
+
+// Matches a row that has part numbers + qty + description but NO pricing columns.
+// Handles the common Kubota layout where description wraps and prices land on the next row.
+type PartialPartRow = {
+  orderedPart: string;
+  shippedPart: string;
+  ordQty: number;
+  shipQty: number;
+  description: string;
+};
+
+function parsePartialRow(text: string): PartialPartRow | null {
+  const normalized = clean(text);
+  // Must start with two part-number tokens (alphanumeric + hyphens), followed by two integers,
+  // followed by a description — but NO trailing price block.
+  const match = normalized.match(
+    /^([A-Z0-9][A-Z0-9\-\.]+)\s+([A-Z0-9][A-Z0-9\-\.]+)\s+([0-9]+)\s+([0-9]+)\s+(.+)$/i,
+  );
+  if (!match) return null;
+
+  // Reject if the last token(s) look like prices — that means the full row is on one line.
+  const lastToken = normalized.split(/\s+/).pop() || "";
+  if (/^[0-9,]+\.[0-9]{2}$/.test(lastToken)) return null;
+
+  return {
+    orderedPart: match[1],
+    shippedPart: match[2],
+    ordQty: num(match[3]),
+    shipQty: num(match[4]),
+    description: clean(match[5]),
+  };
+}
+
+// Matches a row that is purely pricing columns: gross, disc (may have trailing -), net, extGross, extNet
+type PricingRow = {
+  dealerGross: number;
+  disc: number;
+  dealerNet: number;
+  extGross: number;
+  extNet: number;
+};
+
+function parsePricingRow(text: string): PricingRow | null {
+  const normalized = clean(text);
+  // 5 price tokens; second may have trailing minus
+  const match = normalized.match(
+    /^([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2}-?)\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})$/,
+  );
+  if (!match) return null;
+  return {
+    dealerGross: num(match[1]),
+    disc:        num(match[2]),  // num() handles trailing minus
+    dealerNet:   num(match[3]),
+    extGross:    num(match[4]),
+    extNet:      num(match[5]),
   };
 }
 
@@ -248,42 +316,92 @@ function parseLines(layout: PdfLayoutResult): {
   let nextLineNumber = 1;
   let currentLine: InvoiceLine | null = null;
 
+  // Buffer for a partial row (part/qty/description present, pricing not yet seen)
+  let pendingPartial: PartialPartRow | null = null;
+
   for (const row of rows) {
     const text = rowText(row);
     if (!text) continue;
 
     const upper = text.toUpperCase();
 
+    // ── Additional Info continuation ──────────────────────────────────────────
     if (upper.startsWith("ADDITIONAL INFO")) {
+      const originValue = clean(text.replace(/^Additional Info\s*:?\s*/i, ""));
       if (currentLine) {
-        currentLine.origin = clean(
-          text.replace(/^Additional Info\s*:?\s*/i, ""),
-        );
+        currentLine.origin = originValue;
+        // Remove bracket notation we may have added to description
+        currentLine.description = currentLine.description
+          .replace(/\s*\[[^\]]+\]$/, "").trim();
       }
+      pendingPartial = null;
       continue;
     }
 
+    // ── Freight ───────────────────────────────────────────────────────────────
     if (upper.startsWith("FREIGHT CHARGES")) {
-      const amount = num(
-        clean(text.replace(/^Freight Charges/i, "")),
-      );
+      const amount = num(clean(text.replace(/^Freight Charges/i, "")));
       freightCharge = amount;
       currentLine = null;
+      pendingPartial = null;
       continue;
     }
 
+    // ── Totals / noise ────────────────────────────────────────────────────────
     if (upper.startsWith("TOTAL GROSS") || upper === "TOTAL") {
       currentLine = null;
+      pendingPartial = null;
       continue;
     }
 
     if (isNoiseRow(text)) continue;
 
-    const parsed = parsePartRow(text, nextLineNumber);
-    if (parsed) {
-      lines.push(parsed);
-      currentLine = parsed;
+    // ── Full single-row line (legacy — still handle these) ────────────────────
+    const fullParsed = parsePartRow(text, nextLineNumber);
+    if (fullParsed) {
+      lines.push(fullParsed);
+      currentLine = fullParsed;
+      pendingPartial = null;
       nextLineNumber += 1;
+      continue;
+    }
+
+    // ── Pricing-only row — completes a pending partial ────────────────────────
+    const pricing = parsePricingRow(text);
+    if (pricing && pendingPartial) {
+      const line: InvoiceLine = {
+        line_number:    nextLineNumber,
+        line_type:      "PART",
+        part_number:    pendingPartial.shippedPart || pendingPartial.orderedPart,
+        description:    pendingPartial.description,
+        origin:         "",
+        quantity:       pendingPartial.shipQty,
+        unit_price:     pricing.dealerGross,
+        discount_percent: deriveDiscountPercent(pricing.dealerGross, pricing.dealerNet),
+        net_unit_price: pricing.dealerNet,
+        line_total:     pricing.extNet,
+      };
+      lines.push(line);
+      currentLine = line;
+      pendingPartial = null;
+      nextLineNumber += 1;
+      continue;
+    }
+
+    // ── Partial row (part/qty/description, no prices yet) ────────────────────
+    const partial = parsePartialRow(text);
+    if (partial) {
+      pendingPartial = partial;
+      currentLine = null;
+      continue;
+    }
+
+    // ── Origin continuation for a pending partial (e.g. "16N-03" alone) ──────
+    if (pendingPartial && /^[A-Z0-9][-A-Z0-9]*$/i.test(text.trim()) && text.trim().length <= 20) {
+      // Small standalone token after a partial row is likely the additional info / origin
+      // Store it and wait for the pricing row
+      pendingPartial.description += ` [${text.trim()}]`;
+      continue;
     }
   }
 
