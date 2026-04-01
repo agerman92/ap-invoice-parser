@@ -129,176 +129,105 @@ function isNoiseRow(text: string): boolean {
   );
 }
 
-// ── Full single-row match (all 7 fields on one line) ─────────────────────────
+// ── Item row: item# partno qtyEA openqty listprice amount ───────────────────
+// Amount and List Price are at the same y-coordinate in the PDF.
+// Net Price floats at a different y — we ignore it and derive net from amount÷qty.
 function parseItemRow(text: string, lineNumber: number): InvoiceLine | null {
   const normalized = clean(text);
 
-  const match = normalized.match(
-    /^(\d+)\s+(\S+)\s+(\d+(?:\.\d+)?)EA\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})$/i,
-  );
-
-  if (!match) return null;
-
-  const itemNo    = num(match[1]);
-  const partNumber = match[2] || "";
-  const quantity  = num(match[3]);
-  const openQty   = num(match[4]);
-  const listPrice = num(match[5]);
-  const netPrice  = num(match[6]);
-  const amount    = num(match[7]);
-
-  if (!partNumber || quantity <= 0) return null;
-
-  return {
-    line_number:      itemNo || lineNumber,
-    line_type:        "PART",
-    part_number:      partNumber,
-    description:      openQty > 0 ? `(Open Qty ${openQty})` : "",
-    origin:           "",
-    quantity,
-    unit_price:       listPrice,
-    discount_percent: listPrice > 0
-      ? Number((((listPrice - netPrice) / listPrice) * 100).toFixed(2))
-      : 0,
-    net_unit_price: netPrice,
-    line_total:     amount,
-  };
-}
-
-// ── Partial row: item# partno qtyEA openqty listprice (no net/amount yet) ────
-// Woods PDFs stack List Price above Net Price in the same column, so they often
-// land at different y-coordinates and appear as separate PDF rows.
-type PartialItemRow = {
-  itemNo:      number;
-  partNumber:  string;
-  quantity:    number;
-  openQty:     number;
-  listPrice:   number;
-  pendingDesc: string;
-};
-
-function parsePartialItemRow(text: string): PartialItemRow | null {
-  const normalized = clean(text);
-
-  // Primary pattern: item# partno qtyEA openqty listprice (EA attached to qty)
+  // EA attached: "10 25475 2EA 0 1.40 2.10"
   const m1 = normalized.match(
-    /^(\d+)\s+(\S+)\s+(\d+(?:\.\d+)?)EA\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.[0-9]{2})$/i,
+    /^(\d+)\s+(\S+)\s+(\d+(?:\.\d+)?)EA\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})$/i,
   );
-  if (m1) {
-    const partNumber = m1[2] || "";
-    const quantity   = num(m1[3]);
-    if (!partNumber || quantity <= 0) return null;
-    return { itemNo: num(m1[1]), partNumber, quantity, openQty: num(m1[4]), listPrice: num(m1[5]), pendingDesc: "" };
-  }
+  if (m1) return buildLine(m1[1], m1[2], m1[3], m1[4], m1[5], m1[6], lineNumber);
 
-  // Alternate: EA may be a separate token — "10 W37876 1 EA 0 123.87"
+  // EA separate token: "10 25475 2 EA 0 1.40 2.10"
   const m2 = normalized.match(
-    /^(\d+)\s+(\S+)\s+(\d+(?:\.\d+)?)\s+EA\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.[0-9]{2})$/i,
+    /^(\d+)\s+(\S+)\s+(\d+(?:\.\d+)?)\s+EA\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})$/i,
   );
-  if (m2) {
-    const partNumber = m2[2] || "";
-    const quantity   = num(m2[3]);
-    if (!partNumber || quantity <= 0) return null;
-    return { itemNo: num(m2[1]), partNumber, quantity, openQty: num(m2[4]), listPrice: num(m2[5]), pendingDesc: "" };
-  }
+  if (m2) return buildLine(m2[1], m2[2], m2[3], m2[4], m2[5], m2[6], lineNumber);
 
-  // Fallback: item# partno qty openqty listprice (no EA unit at all)
+  // No EA unit: "10 25475 2 0 1.40 2.10"
   const m3 = normalized.match(
-    /^(\d+)\s+(\S+)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.[0-9]{2})$/i,
+    /^(\d+)\s+(\S+)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})$/i,
   );
-  if (m3) {
-    const partNumber = m3[2] || "";
-    const quantity   = num(m3[3]);
-    // Reject if part number looks like a price
-    if (!partNumber || quantity <= 0 || /^[0-9,]+\.[0-9]{2}$/.test(partNumber)) return null;
-    return { itemNo: num(m3[1]), partNumber, quantity, openQty: num(m3[4]), listPrice: num(m3[5]), pendingDesc: "" };
+  if (m3 && !/^[0-9,]+\.[0-9]{2}$/.test(m3[2])) {
+    return buildLine(m3[1], m3[2], m3[3], m3[4], m3[5], m3[6], lineNumber);
   }
 
   return null;
 }
 
-// ── Completion row: netPrice amount (the lower stacked price row) ─────────────
-function parseNetAmountRow(text: string): { netPrice: number; amount: number } | null {
-  const normalized = clean(text);
-  // Two prices: net_unit_price  line_total
-  const match = normalized.match(
-    /^([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})$/,
-  );
-  if (!match) return null;
-  return { netPrice: num(match[1]), amount: num(match[2]) };
+function buildLine(
+  itemStr: string,
+  partNumber: string,
+  qtyStr: string,
+  openQtyStr: string,
+  listStr: string,
+  amountStr: string,
+  fallbackLineNumber: number,
+): InvoiceLine | null {
+  const quantity  = num(qtyStr);
+  const listPrice = num(listStr);
+  const amount    = num(amountStr);
+
+  if (!partNumber || quantity <= 0 || amount <= 0) return null;
+
+  // Derive net unit price from amount / qty — reliable because both columns
+  // land at the same y-coordinate in the PDF, unlike the stacked Net Price.
+  const netUnitPrice = Math.round((amount / quantity) * 10000) / 10000;
+
+  const discountPercent = listPrice > 0 && netUnitPrice < listPrice
+    ? Number((((listPrice - netUnitPrice) / listPrice) * 100).toFixed(2))
+    : 0;
+
+  return {
+    line_number:      num(itemStr) || fallbackLineNumber,
+    line_type:        "PART",
+    part_number:      partNumber,
+    description:      num(openQtyStr) > 0 ? `(Open Qty ${num(openQtyStr)})` : "",
+    origin:           "",
+    quantity,
+    unit_price:       listPrice,
+    discount_percent: discountPercent,
+    net_unit_price:   netUnitPrice,
+    line_total:       amount,
+  };
 }
 
 function parseLines(layout: PdfLayoutResult): InvoiceLine[] {
   const rows = groupRows(layout.items);
   const lines: InvoiceLine[] = [];
   let currentLine: InvoiceLine | null = null;
-  let pendingPartial: PartialItemRow | null = null;
   let fallbackLineNumber = 1;
 
   for (const row of rows) {
     const text = rowText(row);
-    if (isNoiseRow(text)) continue;
+    if (!text || isNoiseRow(text)) continue;
 
-    // ── Try full single-row match first ──────────────────────────────────────
+    // Main item row: item + part + qty + openqty + listprice + amount
     const parsed = parseItemRow(text, fallbackLineNumber);
     if (parsed) {
       lines.push(parsed);
-      currentLine  = parsed;
-      pendingPartial = null;
+      currentLine = parsed;
       fallbackLineNumber += 10;
       continue;
     }
 
-    // ── Net+amount completion row — completes a pending partial ───────────────
-    const netAmount = parseNetAmountRow(text);
-    if (netAmount && pendingPartial) {
-      const { netPrice, amount } = netAmount;
-      const p = pendingPartial;
-      const line: InvoiceLine = {
-        line_number:      p.itemNo || fallbackLineNumber,
-        line_type:        "PART",
-        part_number:      p.partNumber,
-        description:      p.pendingDesc || (p.openQty > 0 ? `(Open Qty ${p.openQty})` : ""),
-        origin:           "",
-        quantity:         p.quantity,
-        unit_price:       p.listPrice,
-        discount_percent: p.listPrice > 0
-          ? Number((((p.listPrice - netPrice) / p.listPrice) * 100).toFixed(2))
-          : 0,
-        net_unit_price: netPrice,
-        line_total:     amount,
-      };
-      lines.push(line);
-      currentLine    = line;
-      pendingPartial = null;
-      fallbackLineNumber += 10;
-      continue;
-    }
+    // Skip standalone price rows (orphaned Net Price values at different y)
+    if (/^[0-9,]+\.[0-9]{2}$/.test(text)) continue;
 
-// ── Partial item row — buffer it, wait for net+amount ────────────────────
-    const partial = parsePartialItemRow(text);
-    if (partial) {
-      pendingPartial = { ...partial, pendingDesc: "" };
-      currentLine    = null;
-      continue;
-    }
+    // Skip rows starting with a digit that aren't item rows
+    if (/^\d/.test(text)) continue;
 
-    // ── Description / continuation row ───────────────────────────────────────
-    const isPrice     = /^[0-9,]+\.[0-9]{2}$/.test(text);
-    const startsDigit = /^\d/.test(text);
-    const isAddress   = text.toUpperCase().includes("USA");
+    // Skip address lines
+    if (text.toUpperCase().includes("USA")) continue;
 
-    if (!isPrice && !startsDigit && !isAddress) {
-      if (currentLine) {
-        currentLine.description = currentLine.description
-          ? clean(`${currentLine.description} ${text}`)
-          : text;
-      } else if (pendingPartial) {
-        // Description arrived before the net+amount row — store it on the pending buffer
-        pendingPartial.pendingDesc = pendingPartial.pendingDesc
-          ? clean(`${pendingPartial.pendingDesc} ${text}`)
-          : text;
-      }
+    // Anything else is a description continuation for the current line
+    if (currentLine) {
+      currentLine.description = currentLine.description
+        ? clean(`${currentLine.description} ${text}`)
+        : text;
     }
   }
 
@@ -307,6 +236,7 @@ function parseLines(layout: PdfLayoutResult): InvoiceLine[] {
     description: clean(line.description || ""),
   }));
 }
+
 
 export function parseWoodsInvoice(
   layout: PdfLayoutResult,
