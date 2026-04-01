@@ -534,8 +534,8 @@
         <p>Upload one or more vendor PDFs. Each file is stored, a record is created, and the invoice is queued for parsing and AP review.</p>
       </div>
       <div class="nav-links">
-        <a class="nav-link" href="./ap-review.html">Review Queue</a>
-        <a class="nav-link" href="./ap-admin.html">Admin Dashboard</a>
+        <a class="nav-link" href="https://approcessor.netlify.app/src/pages/ap-review.html">Review Queue</a>
+        <a class="nav-link" href="https://approcessor.netlify.app/src/pages/ap-admin.html">Admin Dashboard</a>
       </div>
     </div>
 
@@ -887,9 +887,9 @@
       `;
 
       const doneItems = fileQueue.filter(i => i.status === "done" && i.invoiceId);
-      let actionsHtml = `<a class="result-btn result-btn-primary" href="./ap-review.html">View in Review Queue →</a>`;
+      let actionsHtml = `<a class="result-btn result-btn-primary" href="https://approcessor.netlify.app/src/pages/ap-review.html">View in Review Queue →</a>`;
       if (doneItems.length === 1) {
-        actionsHtml += `<a class="result-btn" href="./ap-invoice.html?id=${doneItems[0].invoiceId}">Open Invoice →</a>`;
+        actionsHtml += `<a class="result-btn" href="https://approcessor.netlify.app/src/pages/ap-invoice.html?id=${doneItems[0].invoiceId}">Open Invoice →</a>`;
       }
       if (failed > 0) {
         actionsHtml += `<button class="result-btn" id="retryFailedBtn" type="button">↻ Retry Failed (${failed})</button>`;
@@ -941,7 +941,7 @@
           <div class="history-actions">
             ${statusBadge(invoice.status)}
             ${reviewBadge(invoice.review_status)}
-            <a class="history-open-btn" href="./ap-invoice.html?id=${invoice.id}">Open →</a>
+            <a class="history-open-btn" href="https://approcessor.netlify.app/src/pages/ap-invoice.html?id=${invoice.id}">Open →</a>
           </div>
         </div>
       `;
