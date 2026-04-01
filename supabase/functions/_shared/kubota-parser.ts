@@ -220,8 +220,9 @@ function isNoiseRow(text: string): boolean {
 function parsePartRow(text: string, lineNumber: number): InvoiceLine | null {
   const normalized = clean(text);
 
+  // The discount column may have a trailing minus (e.g. "13.69-") — allow -? on that token only
   const match = normalized.match(
-    /^(\S+)\s+(\S+)\s+([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)\s+(.+?)\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})$/i,
+    /^(\S+)\s+(\S+)\s+([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)\s+(.+?)\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2}-?)\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})\s+([0-9,]+\.[0-9]{2})$/i,
   );
 
   if (!match) return null;
